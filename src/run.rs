@@ -292,15 +292,17 @@ pub(crate) fn run_leg(
                 });
             let workdir = workdir.as_deref();
             let sep = if cfg!(windows) { ";" } else { ":" };
-            let path = format!(
-                "{}{sep}{}",
-                extra_path.join(sep),
-                step_env
-                    .get("PATH")
-                    .map(expr::to_text)
-                    .or_else(|| std::env::var("PATH").ok())
-                    .unwrap_or_default()
-            );
+            let current = step_env
+                .get("PATH")
+                .map(expr::to_text)
+                .or_else(|| std::env::var("PATH").ok())
+                .unwrap_or_default();
+            // The PATH the step sees: GITHUB_PATH additions first, as `execute` builds it.
+            let path = if extra_path.is_empty() {
+                current
+            } else {
+                format!("{}{sep}{current}", extra_path.join(sep))
+            };
             let versions = opts
                 .cache
                 .as_ref()
