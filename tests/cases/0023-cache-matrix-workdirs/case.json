@@ -1,0 +1,28 @@
+{
+  "description": "--cache keys a step by its working directory after expression evaluation, so a matrix leg in another directory never reuses the pass of the first leg (found in a local review, 2026-10-10).",
+  "args": [
+    "run",
+    "--cache",
+    "-k",
+    "--json",
+    "-q"
+  ],
+  "exit": 1,
+  "expect": {
+    "failed": 1,
+    "legs": [
+      {
+        "key": "check#1",
+        "result": "success"
+      },
+      {
+        "key": "check#2",
+        "result": "failure"
+      }
+    ]
+  },
+  "hosts": [
+    "linux",
+    "macos"
+  ]
+}

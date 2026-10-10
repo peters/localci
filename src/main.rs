@@ -464,7 +464,7 @@ fn real_main() -> Result<ExitCode, String> {
         workspace: root,
         run_dir: dir.clone(),
         keep_going: args.keep_going,
-        quiet: args.quiet || parallel > 1,
+        quiet: args.quiet || (parallel > 1 && picked.len() > 1),
         host,
         affected,
         cache,

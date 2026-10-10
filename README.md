@@ -92,7 +92,7 @@ localci run --fast
 - `--cache`: reuse a step that already passed on the same inputs, including its outputs.
 - `--parallel 0`: run independent jobs at the same time (2 to 4, from the CPU count).
 
-On Horizon, a large Rust workspace, a documentation and CI change went from a
+On [Horizon](https://github.com/peters/horizon), a large public Rust workspace, a documentation and CI change went from a
 23-minute full Linux run to 136 seconds with `--fast`, and to 0 seconds for a
 second run with no changes. `localci plan --affected` shows why each step runs
 or not. Run once without `--fast` before you push for review.

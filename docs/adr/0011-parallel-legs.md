@@ -20,7 +20,7 @@ A matrix job counts as failed in `needs` when one of its legs failed, also when
 another leg passes later. If a leg stops with an internal error, it counts as
 failed, and the other legs continue.
 
-With more than one leg, localci does not show the output of the steps. It shows
+When more than one leg runs, localci does not show the output of the steps. It shows
 the step names and the end of the log of a step that failed.
 
 `--fast` is `--affected --cache --parallel 0`. An explicit `--parallel N` with

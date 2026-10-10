@@ -1,0 +1,12 @@
+on: push
+jobs:
+  check:
+    runs-on: localci-host
+    strategy:
+      matrix:
+        dir: [good, bad]
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - run: test -f ok

@@ -274,14 +274,27 @@ pub(crate) fn run_leg(
                 .as_deref()
                 .or(leg.job.defaults.run.shell.as_deref())
                 .or(workflow.defaults.run.shell.as_deref());
+            // The directory as the step sees it: a matrix value gives each leg its own key.
             let workdir = step
                 .working_directory
                 .as_deref()
                 .or(leg.job.defaults.run.working_directory.as_deref())
-                .or(workflow.defaults.run.working_directory.as_deref());
+                .or(workflow.defaults.run.working_directory.as_deref())
+                .map(|w| {
+                    expr::interpolate(
+                        w,
+                        &Ctx {
+                            contexts: &step_contexts,
+                            status,
+                        },
+                    )
+                    .unwrap_or_else(|_| w.to_string())
+                });
+            let workdir = workdir.as_deref();
+            let sep = if cfg!(windows) { ";" } else { ":" };
             let path = format!(
-                "{}:{}",
-                extra_path.join(":"),
+                "{}{sep}{}",
+                extra_path.join(sep),
                 step_env
                     .get("PATH")
                     .map(expr::to_text)
@@ -301,7 +314,7 @@ pub(crate) fn run_leg(
                     &step_env,
                     opts.host.runner_name(),
                     &path,
-                    &versions,
+                    &format!("{}\n{versions}", opts.workspace.display()),
                 ),
                 script,
                 workdir.unwrap_or(".").to_string(),

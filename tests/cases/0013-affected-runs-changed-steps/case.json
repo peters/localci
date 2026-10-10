@@ -30,5 +30,8 @@
   "hosts": [
     "linux",
     "macos"
+  ],
+  "requires": [
+    "python3"
   ]
 }

@@ -6,14 +6,28 @@ jobs:
       a: ${{ steps.out.outputs.a }}
     steps:
       - id: out
-        run: sleep 1 && echo "a=1" >> "$GITHUB_OUTPUT"
+        name: Waits until the other leg started
+        run: |
+          touch started-first
+          i=0
+          while [ ! -f started-second ]; do
+            i=$((i + 1)); [ "$i" -lt 100 ] || exit 1; sleep 0.1
+          done
+          echo "a=1" >> "$GITHUB_OUTPUT"
   second:
     runs-on: localci-host
     outputs:
       b: ${{ steps.out.outputs.b }}
     steps:
       - id: out
-        run: sleep 1 && echo "b=2" >> "$GITHUB_OUTPUT"
+        name: Waits until the other leg started
+        run: |
+          touch started-second
+          i=0
+          while [ ! -f started-first ]; do
+            i=$((i + 1)); [ "$i" -lt 100 ] || exit 1; sleep 0.1
+          done
+          echo "b=2" >> "$GITHUB_OUTPUT"
   last:
     needs: [first, second]
     runs-on: localci-host

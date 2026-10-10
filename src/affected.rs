@@ -317,6 +317,23 @@ impl Affected {
             .as_deref()
             .or(leg.job.defaults.run.working_directory.as_deref())
             .or(self.default_workdir.as_deref());
+        if workdir.is_some_and(|w| w.contains("${{")) {
+            return Err("its working directory uses an expression".into());
+        }
+        if run.contains("needs.") {
+            return Err("it reads outputs of another job".into());
+        }
+        // A local action before this step can change its environment.
+        for earlier in &leg.job.steps[..index - 1] {
+            if let Some(action) = earlier.uses.as_deref().and_then(|u| u.strip_prefix("./")) {
+                let action = action.trim_end_matches('/');
+                if let Some(file) = self.changed.iter().find(|f| f.starts_with(action)) {
+                    return Err(format!(
+                        "the local action {action} before it changed ({file})"
+                    ));
+                }
+            }
+        }
         let usage = analyze(run, &self.root, workdir.unwrap_or("."), 0)?;
         if usage.writes_step_files {
             return Err("it writes a GITHUB_* file that later steps read".into());

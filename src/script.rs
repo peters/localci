@@ -68,12 +68,17 @@ pub fn analyze(script: &str, root: &Path, workdir: &str, depth: usize) -> Result
                 .iter()
                 .map(String::as_str)
                 .skip_while(|w| KEYWORDS.contains(w) || is_assignment(w) || is_case_pattern(w));
-            let Some(first) = words.next() else { continue };
-            if first.contains("()")
-                || first == "in"
-                || BUILTINS.contains(&first)
-                || functions.iter().any(|f| f == first)
-            {
+            let Some(mut first) = words.next() else {
+                continue;
+            };
+            // `name() { body` on one line: the body is a command too.
+            if first.contains("()") {
+                let Some(body) = words.by_ref().find(|w| *w != "{") else {
+                    continue;
+                };
+                first = body;
+            }
+            if first == "in" || BUILTINS.contains(&first) || functions.iter().any(|f| f == first) {
                 continue;
             }
             if let Some(tool) = TOOLS.iter().find(|t| t.commands.contains(&first)) {
@@ -236,6 +241,8 @@ mod tests {
             Some(vec!["Rust"])
         );
         assert_eq!(tools("for f in a b; do python3 x.py; done"), None);
+        assert_eq!(tools("foo() { python3 gen.py; }; foo; cargo test"), None);
+        assert_eq!(tools("build() { cargo build; }\nbuild"), Some(vec!["Rust"]));
         assert_eq!(
             tools("case \"$x\" in\n  a) python3 y ;;\n  *) cargo test ;;\nesac"),
             None

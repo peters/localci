@@ -1,6 +1,33 @@
 {
   "description": "--affected runs a tool step when a step before it was added, removed or moved, because an earlier step can change its environment (found in a local review, 2026-10-10).",
-  "args": ["run", "--affected", "--base", "base", "--json", "-q"],
-  "expect": {"failed": 0, "legs": [{"steps": [{"outcome": "success"}, {"outcome": "success"}]}]},
-  "hosts": ["linux", "macos"]
+  "args": [
+    "run",
+    "--affected",
+    "--base",
+    "base",
+    "--json",
+    "-q"
+  ],
+  "expect": {
+    "failed": 0,
+    "legs": [
+      {
+        "steps": [
+          {
+            "outcome": "success"
+          },
+          {
+            "outcome": "success"
+          }
+        ]
+      }
+    ]
+  },
+  "hosts": [
+    "linux",
+    "macos"
+  ],
+  "requires": [
+    "python3"
+  ]
 }

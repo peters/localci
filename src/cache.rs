@@ -92,7 +92,7 @@ impl Cache {
             })
             .ok_or("no cache folder: set XDG_CACHE_HOME or HOME")?;
         let dir = base.join("localci").join(stable_hash(&[&common]));
-        std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        crate::run::private_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         prune(&dir);
         Ok(Cache {
             root: root.to_path_buf(),
@@ -207,13 +207,23 @@ impl Cache {
             let temp = self
                 .dir
                 .join(format!("{key}.{}.{n}.tmp", std::process::id()));
-            if std::fs::write(&temp, text).is_ok()
+            if write_private(&temp, &text).is_ok()
                 && std::fs::rename(&temp, self.file(key)).is_err()
             {
                 let _ = std::fs::remove_file(&temp);
             }
         }
     }
+}
+
+/// Writes a file that only this user can read: records can hold `GITHUB_ENV` values.
+fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    options.open(path)?.write_all(text.as_bytes())
 }
 
 /// Removes records and temporary files that nobody touched for 30 days.
