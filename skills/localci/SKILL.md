@@ -136,7 +136,9 @@ different PR process, follow those.
 6. **Ready to merge** when CI passed on the exact head, no review thread is
    open, and the review on GitHub says "Approved", or says "Needs a closer
    look" with 0 open findings and no "Previously missed" findings while the
-   local review on the same commit is clean. A vague summary without findings
+   local review found nothing actionable for the same file changes. A new
+   commit message or an empty commit does not change the files, but the review
+   on GitHub must still run on that exact head. A vague summary without findings
    is not a finding. The repository's merge rules still apply, for example a
    person's explicit permission.
 7. **Never on the default branch.** GitHub reads the whole commit message. Make
