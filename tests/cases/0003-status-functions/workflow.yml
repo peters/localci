@@ -1,0 +1,24 @@
+on: push
+jobs:
+  status:
+    runs-on: localci-host
+    steps:
+      - name: Allowed to fail
+        continue-on-error: true
+        run: exit 1
+      - name: Runs because continue-on-error kept the job green
+        run: true
+      - id: broken
+        name: Fails
+        run: exit 2
+      - name: Default if is success()
+        run: echo never
+      - name: Runs on failure
+        if: failure() && steps.broken.outcome == 'failure'
+        run: true
+      - name: Not cancelled
+        if: ${{ !cancelled() }}
+        run: true
+      - name: Never on success only
+        if: success()
+        run: echo never

@@ -1,0 +1,34 @@
+on: push
+defaults:
+  run:
+    shell: sh
+jobs:
+  defaults:
+    runs-on: localci-host
+    defaults:
+      run:
+        working-directory: sub
+    env:
+      FROM_JOB: ${{ github.event_name }}-job
+    steps:
+      - name: Make the working directory
+        working-directory: .
+        run: mkdir -p sub/bin && printf '#!/bin/sh\necho tool-ran\n' > sub/bin/localci-test-tool && chmod +x sub/bin/localci-test-tool
+      - name: Write env files
+        run: |
+          pwd | grep -q '/sub$'
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+          printf 'MULTI<<EOT\nline one\nline two\nEOT\n' >> "$GITHUB_ENV"
+      - name: Read them
+        shell: bash
+        env:
+          FROM_STEP: ${{ env.FROM_JOB }}-step
+        run: |
+          test "$(localci-test-tool)" = tool-ran
+          test "$MULTI" = $'line one\nline two'
+          test "$FROM_STEP" = push-job-step
+      - name: Python shell
+        shell: python
+        run: |
+          import os
+          assert os.environ["CI"] == "true"

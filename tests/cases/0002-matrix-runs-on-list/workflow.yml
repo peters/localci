@@ -1,0 +1,12 @@
+on: push
+jobs:
+  test:
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      matrix:
+        include:
+          - runs-on: [self-hosted, ubuntu-large-x64]
+          - runs-on: [self-hosted, edge-arm64]
+          - runs-on: macos-15
+    steps:
+      - run: echo hi

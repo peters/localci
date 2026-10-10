@@ -1,0 +1,11 @@
+{
+  "description": "A matrix value that is a list of runner labels becomes the labels, not one JSON string.",
+  "args": ["plan", "--json"],
+  "expect": {
+    "legs": [
+      {"key": "test#1", "runs_on": ["self-hosted", "ubuntu-large-x64"], "os": "linux"},
+      {"key": "test#2", "runs_on": ["self-hosted", "edge-arm64"], "os": null},
+      {"key": "test#3", "runs_on": ["macos-15"], "os": "macos"}
+    ]
+  }
+}

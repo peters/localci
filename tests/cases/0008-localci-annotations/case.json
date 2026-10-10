@@ -1,0 +1,12 @@
+{
+  "description": "`!vars.LOCALCI` on a job and `!env.LOCALCI` on a step skip them in a local run. GitHub runs them, because the values are empty there. See ADR-0008.",
+  "args": ["run", "--json", "-q", "--event", "push"],
+  "expect": {
+    "failed": 0,
+    "legs": [
+      {"key": "deploy", "result": "skipped"},
+      {"key": "test", "result": "success", "steps": [{"outcome": "skipped"}, {"outcome": "success"}, {"outcome": "skipped"}]}
+    ]
+  },
+  "hosts": ["linux", "macos"]
+}

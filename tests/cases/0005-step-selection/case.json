@@ -1,0 +1,10 @@
+{
+  "description": "Targets, --matrix, --skip by text and --skip LEG:N.",
+  "args": ["run", "pick", "--matrix", "shard=libs", "--skip", "slow", "--skip", "pick#2:1", "--json", "-q"],
+  "expect": {
+    "failed": 0,
+    "legs": [{"key": "pick#2", "result": "success", "steps": [
+      {"outcome": "skipped", "reason": "--skip"}, {"outcome": "skipped", "reason": "--skip"}, {"outcome": "success"}]}]
+  },
+  "hosts": ["linux", "macos"]
+}

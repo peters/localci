@@ -1,0 +1,6 @@
+{
+  "description": "defaults.run at workflow and job level, working-directory, GITHUB_PATH, multi-line GITHUB_ENV, env expressions and the python shell.",
+  "args": ["run", "--json", "-q", "--event", "push"],
+  "expect": {"failed": 0, "legs": [{"result": "success"}]},
+  "hosts": ["linux", "macos"]
+}

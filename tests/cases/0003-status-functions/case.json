@@ -1,0 +1,13 @@
+{
+  "description": "continue-on-error, success(), failure(), always(), !cancelled() and steps.<id>.outcome.",
+  "args": ["run", "--json", "-q"],
+  "exit": 1,
+  "expect": {
+    "legs": [
+      {"result": "failure", "failed_step": 3, "steps": [
+        {"outcome": "failure"}, {"outcome": "success"}, {"outcome": "failure"}, {"outcome": "skipped"},
+        {"outcome": "success"}, {"outcome": "success"}, {"outcome": "skipped"}]}
+    ]
+  },
+  "hosts": ["linux", "macos"]
+}

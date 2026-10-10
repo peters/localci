@@ -1,0 +1,23 @@
+on: push
+jobs:
+  services:
+    runs-on: ubuntu-latest
+    services:
+      cache:
+        image: redis:7.4.3
+        ports:
+          - 6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 1s
+          --health-retries 30
+    steps:
+      - name: Talks to the service on its mapped port
+        shell: bash
+        run: |
+          port="${{ job.services.cache.ports['6379'] }}"
+          test -n "$port"
+          exec 3<>"/dev/tcp/127.0.0.1/$port"
+          printf 'PING\r\n' >&3
+          read -r reply <&3
+          test "$reply" = $'+PONG\r'

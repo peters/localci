@@ -1,0 +1,24 @@
+on: push
+jobs:
+  shells:
+    runs-on: localci-host
+    steps:
+      - name: The default shell is PowerShell 7
+        id: pwsh
+        run: |
+          if ($PSVersionTable.PSEdition -ne 'Core') { exit 1 }
+          "color=blue" >> $env:GITHUB_OUTPUT
+      - name: cmd
+        shell: cmd
+        run: if not "%LOCALCI%"=="true" exit /b 1
+      - name: Git Bash
+        shell: bash
+        run: test "${{ steps.pwsh.outputs.color }}" = blue && test "$RUNNER_OS" = Windows && test -n "$BASH_VERSION"
+      - name: Python
+        shell: python
+        run: |
+          import os, sys
+          sys.exit(0 if os.environ["RUNNER_OS"] == "Windows" else 1)
+      - name: A failing PowerShell command fails the step
+        continue-on-error: true
+        run: cmd /c exit 4

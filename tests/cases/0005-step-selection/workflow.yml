@@ -1,0 +1,14 @@
+on: push
+jobs:
+  pick:
+    runs-on: localci-host
+    strategy:
+      matrix:
+        shard: [ui, libs]
+    steps:
+      - name: Lint
+        run: true
+      - name: Slow tests
+        run: exit 1
+      - name: Fast tests
+        run: test "${{ matrix.shard }}" = libs

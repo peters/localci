@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="140" viewBox="0 0 560 140" role="img" aria-label="localci">
+  <style>
+    .word { fill: #0f172a; }
+    .tag { fill: #64748b; }
+    @media (prefers-color-scheme: dark) {
+      .word { fill: #f1f5f9; }
+      .tag { fill: #94a3b8; }
+    }
+  </style>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e293b"/>
+      <stop offset="1" stop-color="#0b1120"/>
+    </linearGradient>
+    <linearGradient id="ok" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4ade80"/>
+      <stop offset="1" stop-color="#16a34a"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="120" height="120" rx="28" fill="url(#bg)"/>
+  <rect x="10.5" y="10.5" width="119" height="119" rx="27.5" fill="none" stroke="#334155"/>
+  <polyline points="32,36 46,47 32,58" fill="none" stroke="#94a3b8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="54" y1="58" x2="70" y2="58" stroke="#94a3b8" stroke-width="6" stroke-linecap="round"/>
+  <line x1="34" y1="96" x2="92" y2="96" stroke="#334155" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="34" cy="96" r="7" fill="#38bdf8"/>
+  <circle cx="58" cy="96" r="7" fill="#38bdf8"/>
+  <circle cx="96" cy="94" r="18" fill="url(#ok)"/>
+  <polyline points="87,94 93.5,100.5 105,88" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="156" y="88" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="66" font-weight="700" letter-spacing="-1"><tspan class="word">local</tspan><tspan fill="#22c55e">ci</tspan></text>
+  <text class="tag" x="159" y="120" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="19">your GitHub Actions CI, on your machine</text>
+</svg>

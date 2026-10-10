@@ -1,0 +1,15 @@
+{
+  "description": "Step outputs, GITHUB_ENV, job outputs through needs, --skip-setup, and the steps after a failure.",
+  "args": ["run", "--skip-setup", "--json", "-q", "-k"],
+  "exit": 1,
+  "expect": {
+    "failed": 1,
+    "legs": [
+      {"key": "first#1", "result": "success", "steps": [
+        {"outcome": "skipped"}, {"outcome": "success"}, {"outcome": "skipped", "reason": "setup step (--skip-setup)"}, {"outcome": "success"}]},
+      {"key": "second", "result": "failure", "failed_step": 2, "steps": [
+        {"outcome": "success"}, {"outcome": "failure", "reason": "exit 3"}, {"outcome": "skipped"}, {"outcome": "success"}]}
+    ]
+  },
+  "hosts": ["linux"]
+}

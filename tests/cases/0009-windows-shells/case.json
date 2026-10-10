@@ -1,0 +1,7 @@
+{
+  "description": "Windows shells: pwsh by default, cmd, Git Bash (not the WSL launcher) and python; a native exit code fails a pwsh step.",
+  "args": ["run", "--json", "-q"],
+  "expect": {"failed": 0, "legs": [{"result": "success", "steps": [
+    {"outcome": "success"}, {"outcome": "success"}, {"outcome": "success"}, {"outcome": "success"}, {"outcome": "failure"}]}]},
+  "hosts": ["windows"]
+}

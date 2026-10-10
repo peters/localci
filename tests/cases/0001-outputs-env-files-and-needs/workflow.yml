@@ -1,0 +1,37 @@
+name: outputs
+env:
+  GREETING: hello
+jobs:
+  first:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: macos-latest
+          - os: windows-latest
+    outputs:
+      color: ${{ steps.pick.outputs.color }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: pick
+        run: |
+          echo "color=blue" >> "$GITHUB_OUTPUT"
+          echo "LATER=from-env-file" >> "$GITHUB_ENV"
+      - name: Install things
+        run: sudo apt-get install nothing
+      - name: Sees env file
+        run: test "$LATER" = from-env-file && test "$GREETING" = hello && test "$RUNNER_OS" = "${{ runner.os }}"
+  second:
+    needs: first
+    runs-on: localci-host
+    steps:
+      - name: Reads needs
+        run: test "${{ needs.first.outputs.color }}" = blue
+      - name: Fails
+        run: exit 3
+      - name: Skipped after failure
+        run: echo never
+      - name: Cleanup
+        if: always()
+        run: echo cleanup

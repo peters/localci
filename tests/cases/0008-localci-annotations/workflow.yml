@@ -1,0 +1,19 @@
+on: push
+jobs:
+  deploy:
+    if: ${{ !vars.LOCALCI }}
+    runs-on: localci-host
+    steps:
+      - run: exit 1
+  test:
+    runs-on: localci-host
+    steps:
+      - name: Install packages
+        if: ${{ !env.LOCALCI }}
+        run: exit 1
+      - name: Only on a local run
+        if: env.LOCALCI == 'true'
+        run: test "$LOCALCI" = true
+      - name: Combined with a matrix check
+        if: ${{ !env.LOCALCI && github.event_name == 'push' }}
+        run: exit 1

@@ -1,0 +1,7 @@
+{
+  "description": "services: start as Docker containers with health checks and a mapped port in job.services.",
+  "args": ["run", "--json", "-q"],
+  "expect": {"failed": 0, "legs": [{"result": "success"}]},
+  "hosts": ["linux"],
+  "requires": ["docker"]
+}

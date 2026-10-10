@@ -1,0 +1,18 @@
+[package]
+name = "localci"
+version = "0.1.0-beta1"
+edition = "2021"
+description = "Run the GitHub Actions jobs that match this host, locally, so CI feedback does not wait on GitHub"
+license = "MIT"
+repository = "https://github.com/peters/localci"
+readme = "README.md"
+keywords = ["github-actions", "ci", "workflow", "local", "agent"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_yaml = "0.9"
+
+[profile.release]
+strip = true

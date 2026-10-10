@@ -1,0 +1,7 @@
+{
+  "description": "GitHub reads YAML booleans and numbers in run, name, id and outputs as text (found by case 0003, 2026-10-10).",
+  "args": ["run", "--json", "-q"],
+  "exit": 0,
+  "expect": {"legs": [{"name": "2026", "result": "success", "steps": [{"name": "1"}, {"name": "false", "outcome": "success"}]}]},
+  "hosts": ["linux", "macos"]
+}

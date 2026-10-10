@@ -1,0 +1,13 @@
+on: push
+jobs:
+  scalars:
+    name: 2026
+    runs-on: localci-host
+    outputs:
+      count: 3
+    steps:
+      - name: 1
+        run: true
+      - name: false
+        id: 7
+        run: echo "value=${{ 42 }}"
