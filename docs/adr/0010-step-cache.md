@@ -19,6 +19,7 @@ steps that passed with the same inputs a few minutes before.
   - the script and the working directory, after expression evaluation;
   - the shell, the environment and the `PATH` of the step;
   - the system and the checkout folder;
+  - the commit, the Git reference and the event name;
   - the version of each tool that the step runs. The key
   uses FNV-1a, a hash that does not change between Rust releases.
 - localci uses a record when the snapshot is the same. For a step with only

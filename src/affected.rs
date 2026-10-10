@@ -323,6 +323,28 @@ impl Affected {
         if run.contains("needs.") {
             return Err("it reads outputs of another job".into());
         }
+        // An earlier step can change this step's environment through a script it runs,
+        // so a changed file that an earlier step names or calls makes this step run.
+        for earlier in &leg.job.steps[..index - 1] {
+            let Some(text) = earlier.run.as_deref() else {
+                continue;
+            };
+            let called = analyze(
+                text,
+                &self.root,
+                workdir_of(leg, earlier, self).unwrap_or("."),
+                0,
+            )
+            .map(|u| u.scripts)
+            .unwrap_or_default();
+            let named = self
+                .changed
+                .iter()
+                .find(|f| text.contains(f.as_str()) || called.contains(f));
+            if let Some(file) = named {
+                return Err(format!("{file}, which an earlier step runs, changed"));
+            }
+        }
         // A local action before this step can change its environment.
         for earlier in &leg.job.steps[..index - 1] {
             if let Some(action) = earlier.uses.as_deref().and_then(|u| u.strip_prefix("./")) {
@@ -441,6 +463,14 @@ fn is_project(_root: &Path, tool: &Tool, dir: &Path) -> bool {
             dir.join(marker).is_file()
         }
     })
+}
+
+/// The working directory of a step: its own, the job's default, or the workflow's.
+fn workdir_of<'a>(leg: &'a Leg, step: &'a Step, affected: &'a Affected) -> Option<&'a str> {
+    step.working_directory
+        .as_deref()
+        .or(leg.job.defaults.run.working_directory.as_deref())
+        .or(affected.default_workdir.as_deref())
 }
 
 fn short(sha: &str) -> &str {
