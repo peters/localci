@@ -23,7 +23,8 @@ failed, and the other legs continue.
 With more than one leg, localci does not show the output of the steps. It shows
 the step names and the end of the log of a step that failed.
 
-`--fast` is `--affected --cache --parallel 0`.
+`--fast` is `--affected --cache --parallel 0`. An explicit `--parallel N` with
+`--fast` sets the number of legs.
 
 ## Consequences
 

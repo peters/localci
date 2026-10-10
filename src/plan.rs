@@ -174,6 +174,12 @@ pub fn to_json(
                 .iter()
                 .enumerate()
                 .map(|(i, step)| {
+                    let decision = affected.map(|a| a.decide(leg, i + 1, step));
+                    let (skip, runs) = match decision {
+                        Some(Ok(skip)) => (Some(skip), None),
+                        Some(Err(crate::affected::Runs::Because(why))) => (None, Some(why)),
+                        _ => (None, None),
+                    };
                     json!({
                         "index": i + 1,
                         "name": step.label(),
@@ -184,8 +190,8 @@ pub fn to_json(
                         "if": step.condition.as_ref().map(yaml_text),
                         "leave_out": selection.leaves_out(leg, i + 1, step).map(String::from)
                             .or_else(|| (static_if(leg, step, base) == Some(false)).then(|| "if: false for this leg".to_string()))
-                            .or_else(|| affected.and_then(|a| a.leaves_out(leg, i + 1, step))),
-                        "runs_because": affected.and_then(|a| a.decide(leg, i + 1, step).err()),
+                            .or(skip),
+                        "runs_because": runs,
                     })
                 })
                 .collect();
@@ -251,7 +257,7 @@ pub fn print(
                     format!("skip  ({})", unaffected.unwrap_or_default())
                 }
                 None => match decision {
-                    Some(Err(why)) if k == Kind::Run && !why.contains("no known build tool") => {
+                    Some(Err(crate::affected::Runs::Because(why))) if k == Kind::Run => {
                         format!("run   (runs: {why})")
                     }
                     _ => k.as_str().to_string(),

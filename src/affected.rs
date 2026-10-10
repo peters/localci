@@ -8,6 +8,7 @@ use std::{
     collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
     process::Command,
+    sync::{Mutex, OnceLock, PoisonError},
 };
 
 /// A build tool, the files it reads, and the commands that start it.
@@ -17,6 +18,8 @@ pub struct Tool {
     extensions: &'static [&'static str],
     files: &'static [&'static str],
     dirs: &'static [&'static str],
+    /// Commands whose output names the toolchain version, for the step cache key.
+    pub versions: &'static [&'static str],
     /// Files that mark a project folder. Every file in that folder is an input,
     /// because tests can read data from it without naming each file.
     projects: &'static [&'static str],
@@ -40,6 +43,7 @@ pub const TOOLS: &[Tool] = &[
             "deny.toml",
         ],
         dirs: &[".cargo/"],
+        versions: &["cargo --version", "rustc --version"],
         projects: &["Cargo.toml"],
     },
     Tool {
@@ -58,6 +62,7 @@ pub const TOOLS: &[Tool] = &[
             ".npmrc",
         ],
         dirs: &[],
+        versions: &["node --version"],
         projects: &["package.json"],
     },
     Tool {
@@ -69,6 +74,7 @@ pub const TOOLS: &[Tool] = &[
         ],
         files: &["global.json", "nuget.config", "NuGet.Config"],
         dirs: &[],
+        versions: &["dotnet --version"],
         projects: &[".csproj", ".fsproj", ".vbproj"],
     },
     Tool {
@@ -77,6 +83,7 @@ pub const TOOLS: &[Tool] = &[
         extensions: &["go"],
         files: &["go.mod", "go.sum", "go.work", "go.work.sum"],
         dirs: &[],
+        versions: &["go version"],
         projects: &["go.mod"],
     },
     Tool {
@@ -85,6 +92,7 @@ pub const TOOLS: &[Tool] = &[
         extensions: &["kt", "kts", "java", "gradle", "xml", "properties", "toml"],
         files: &[],
         dirs: &["gradle/"],
+        versions: &[],
         projects: &["build.gradle", "build.gradle.kts"],
     },
     Tool {
@@ -106,9 +114,21 @@ pub const TOOLS: &[Tool] = &[
         ],
         files: &["Package.swift", "Package.resolved"],
         dirs: &[],
+        versions: &["swift --version", "xcodebuild -version"],
         projects: &["Package.swift"],
     },
 ];
+
+const NOT_A_TOOL: &str = "it runs no known build tool";
+
+/// Why `--affected` runs a step.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Runs {
+    /// The step is not made of known build tool commands, so localci never leaves it out.
+    NotATool,
+    /// A tool step that runs for this reason.
+    Because(String),
+}
 
 /// One job of a workflow: its settings without the steps, and each step, as YAML text.
 #[derive(Default)]
@@ -126,12 +146,15 @@ pub struct Affected {
     new_settings: String,
     old_jobs: HashMap<String, JobText>,
     new_jobs: HashMap<String, JobText>,
+    /// The workflow's `defaults.run.working-directory`.
+    default_workdir: Option<String>,
 }
 
 fn git(root: &Path, args: &[&str]) -> Option<String> {
     let out = Command::new("git")
         .arg("-C")
         .arg(root)
+        .args(["-c", "core.quotepath=off"])
         .args(args)
         .output()
         .ok()?;
@@ -198,12 +221,12 @@ impl Affected {
     pub fn new(root: &Path, base: &str, workflow: &Path) -> Result<Affected, String> {
         let mut changed = BTreeSet::new();
         for args in [
-            vec!["diff", "--name-only", "--no-renames", base, "HEAD"],
-            vec!["diff", "--name-only", "--no-renames", "HEAD"],
-            vec!["ls-files", "--others", "--exclude-standard"],
+            vec!["diff", "--name-only", "-z", "--no-renames", base, "HEAD"],
+            vec!["diff", "--name-only", "-z", "--no-renames", "HEAD"],
+            vec!["ls-files", "-z", "--others", "--exclude-standard"],
         ] {
             let out = git(root, &args).ok_or_else(|| format!("git {} failed", args.join(" ")))?;
-            changed.extend(out.lines().filter(|l| !l.is_empty()).map(String::from));
+            changed.extend(out.split('\0').filter(|l| !l.is_empty()).map(String::from));
         }
         let rel = workflow
             .strip_prefix(root)
@@ -212,8 +235,14 @@ impl Affected {
             .replace('\\', "/");
         let (old_settings, old_jobs) =
             parse(&git(root, &["show", &format!("{base}:{rel}")]).unwrap_or_default());
-        let (new_settings, new_jobs) =
-            parse(&std::fs::read_to_string(workflow).unwrap_or_default());
+        let new_text = std::fs::read_to_string(workflow).unwrap_or_default();
+        let (new_settings, new_jobs) = parse(&new_text);
+        let doc: Yaml = serde_yaml::from_str(&new_text).unwrap_or(Yaml::Null);
+        let default_workdir = doc
+            .get("defaults")
+            .and_then(|d| d.get("run"))
+            .and_then(|r| r.get("working-directory"))
+            .map(crate::workflow::yaml_text);
         Ok(Affected {
             root: root.to_path_buf(),
             base: base.to_string(),
@@ -222,6 +251,7 @@ impl Affected {
             new_settings,
             old_jobs,
             new_jobs,
+            default_workdir,
         })
     }
 
@@ -239,8 +269,18 @@ impl Affected {
     }
 
     /// `Ok` with the reason to leave the step out, or `Err` with the reason it runs.
-    pub fn decide(&self, leg: &Leg, index: usize, step: &Step) -> Result<String, String> {
-        let run = step.run.as_deref().ok_or("it is not a run step")?;
+    pub fn decide(&self, leg: &Leg, index: usize, step: &Step) -> Result<String, Runs> {
+        self.decide_inner(leg, index, step).map_err(|why| {
+            if why == NOT_A_TOOL {
+                Runs::NotATool
+            } else {
+                Runs::Because(why)
+            }
+        })
+    }
+
+    fn decide_inner(&self, leg: &Leg, index: usize, step: &Step) -> Result<String, String> {
+        let run = step.run.as_deref().ok_or(NOT_A_TOOL)?;
         if step.id.is_some() {
             return Err("it has an id, so later steps can read its outputs".into());
         }
@@ -263,19 +303,26 @@ impl Affected {
             .steps
             .get(index - 1)
             .ok_or("the step is not in the workflow file")?;
-        if !old.steps.contains(current) {
-            return Err(format!("the step changed since {since}"));
+        // Steps before this one can change its environment, so they must be the same too.
+        if old.steps.get(..index) != new.steps.get(..index) {
+            let what = if old.steps.contains(current) {
+                "a step before it"
+            } else {
+                "the step"
+            };
+            return Err(format!("{what} changed since {since}"));
         }
-        let workdir =
-            step.working_directory
-                .as_deref()
-                .or(leg.job.defaults.run.working_directory.as_deref());
+        let workdir = step
+            .working_directory
+            .as_deref()
+            .or(leg.job.defaults.run.working_directory.as_deref())
+            .or(self.default_workdir.as_deref());
         let usage = analyze(run, &self.root, workdir.unwrap_or("."), 0)?;
         if usage.writes_step_files {
             return Err("it writes a GITHUB_* file that later steps read".into());
         }
         if usage.tools.is_empty() {
-            return Err("it runs no known build tool".into());
+            return Err(NOT_A_TOOL.into());
         }
         if let Some(script) = usage.scripts.iter().find(|s| self.changed.contains(*s)) {
             return Err(format!("{script} changed"));
@@ -325,9 +372,31 @@ pub fn is_input(root: &Path, tool: &Tool, file: &str) -> bool {
     }
     args.push("--".into());
     args.extend(tool.extensions.iter().map(|e| format!("*.{e}")));
-    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    git(root, &refs).is_some_and(|out| !out.trim().is_empty())
+    let key = format!("{}|{}|{file}", root.display(), tool.name);
+    let memo = MEMO.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(known) = memo
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(&key)
+    {
+        return *known;
+    }
+    // `git grep` exits 1 for no match. Any other failure counts as an input: a wrong
+    // guess must make a step run, not hide it.
+    let found = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(&args)
+        .output()
+        .map_or(true, |out| out.status.code() != Some(1));
+    memo.lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(key, found);
+    found
 }
+
+/// `is_input` answers for this process: one `git grep` for each file and tool.
+static MEMO: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
 
 /// Whether a folder that contains `file` is a project folder of `tool`.
 fn in_project(root: &Path, tool: &Tool, file: &str) -> bool {

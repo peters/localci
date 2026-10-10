@@ -29,6 +29,9 @@ The records are in `$XDG_CACHE_HOME/localci`, or in `~/.cache/localci`.
 
 ## Consequences
 
+- The snapshot does not contain the files that `.gitignore` excludes. A step
+  that reads an ignored file, for example `.env.local` or generated code, can
+  get an old result.
 - A step that reads data from outside the checkout, for example from the
   network, can show an old result. Do not use `--cache` for that kind of check.
 - The snapshot puts each untracked file that `.gitignore` does not exclude into

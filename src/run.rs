@@ -274,12 +274,11 @@ pub(crate) fn run_leg(
                 .as_deref()
                 .or(leg.job.defaults.run.shell.as_deref())
                 .or(workflow.defaults.run.shell.as_deref());
-            let workdir = step.working_directory.as_deref().or(leg
-                .job
-                .defaults
-                .run
+            let workdir = step
                 .working_directory
-                .as_deref());
+                .as_deref()
+                .or(leg.job.defaults.run.working_directory.as_deref())
+                .or(workflow.defaults.run.working_directory.as_deref());
             let path = format!(
                 "{}:{}",
                 extra_path.join(":"),
@@ -292,7 +291,7 @@ pub(crate) fn run_leg(
             let versions = opts
                 .cache
                 .as_ref()
-                .map(|c| c.tool_versions(&script))
+                .map(|c| c.tool_versions(&script, workdir.unwrap_or("."), &path))
                 .unwrap_or_default();
             (
                 crate::cache::Cache::key(
@@ -305,10 +304,13 @@ pub(crate) fn run_leg(
                     &versions,
                 ),
                 script,
+                workdir.unwrap_or(".").to_string(),
             )
         });
         let hit = match (&opts.cache, &cache_key) {
-            (Some(cache), Some((key, script))) if step.run.is_some() => cache.lookup(key, script),
+            (Some(cache), Some((key, script, workdir))) if step.run.is_some() => {
+                cache.lookup(key, script, workdir)
+            }
             _ => None,
         };
         if let Some(entry) = hit {
@@ -348,7 +350,7 @@ pub(crate) fn run_leg(
         report.seconds = step_start.elapsed().as_secs_f64();
         report.log = Some(log.clone());
         let (outputs, new_env, new_path) = files.read();
-        if let (Ok(()), Some(cache), Some((key, _))) = (&outcome, &opts.cache, &cache_key) {
+        if let (Ok(()), Some(cache), Some((key, _, _))) = (&outcome, &opts.cache, &cache_key) {
             let entry = crate::cache::Entry {
                 outputs: outputs.clone(),
                 env: new_env.clone(),

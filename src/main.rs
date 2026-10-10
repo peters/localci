@@ -308,17 +308,18 @@ fn check(root: &Path, paths: &[String]) -> ExitCode {
     }
 }
 
-/// The `--affected` analysis, against `--base` or the pull request base.
+/// The `--affected` analysis, against `--base` or the merge base with origin's default branch.
 fn affected_for(
     root: &Path,
     args: &Args,
-    contexts: &Map<String, Value>,
     workflow: &Path,
 ) -> Result<Option<localci::affected::Affected>, String> {
     if !args.affected {
+        if args.base.is_some() {
+            eprintln!("localci: warning: --base only applies with --affected or --fast");
+        }
         return Ok(None);
     }
-    let _ = contexts;
     let base = match localci::affected::base_commit(root, args.base.as_deref()) {
         Some(base) => base,
         None if args.base.is_some() => {
@@ -378,7 +379,7 @@ fn real_main() -> Result<ExitCode, String> {
     let host = Os::host();
     let sel = &args.selection;
 
-    let affected = affected_for(&root, &args, &contexts, &path)?;
+    let affected = affected_for(&root, &args, &path)?;
     if args.command != "run" {
         if args.json {
             let mut plan = plan::to_json(&legs, sel, host, &contexts, affected.as_ref());

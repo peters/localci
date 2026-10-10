@@ -1,0 +1,11 @@
+on: push
+jobs:
+  build:
+    runs-on: localci-host
+    steps:
+      - name: Tools on PATH
+        run: echo "$PWD/bin" >> "$GITHUB_PATH"
+      - name: Set flags
+        run: echo "RUSTFLAGS=-Dwarnings" >> "$GITHUB_ENV"
+      - name: Rust tests
+        run: cargo test

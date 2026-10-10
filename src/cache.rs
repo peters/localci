@@ -47,7 +47,11 @@ pub fn stable_hash(parts: &[&str]) -> String {
 
 fn git(root: &Path, index: Option<&Path>, args: &[&str]) -> Option<String> {
     let mut command = Command::new("git");
-    command.arg("-C").arg(root).args(args);
+    command
+        .arg("-C")
+        .arg(root)
+        .args(["-c", "core.quotepath=off"])
+        .args(args);
     if let Some(index) = index {
         command.env("GIT_INDEX_FILE", index);
     }
@@ -89,6 +93,7 @@ impl Cache {
             .ok_or("no cache folder: set XDG_CACHE_HOME or HOME")?;
         let dir = base.join("localci").join(stable_hash(&[&common]));
         std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        prune(&dir);
         Ok(Cache {
             root: root.to_path_buf(),
             dir,
@@ -97,9 +102,10 @@ impl Cache {
         })
     }
 
-    /// The versions of the tools that `script` runs, so a toolchain update is a miss.
-    pub fn tool_versions(&self, script: &str) -> String {
-        let Ok(usage) = analyze(script, &self.root, ".", 0) else {
+    /// The versions of the tools that `script` runs, found on the step's `path`, so a
+    /// toolchain update is a miss.
+    pub fn tool_versions(&self, script: &str, workdir: &str, path: &str) -> String {
+        let Ok(usage) = analyze(script, &self.root, workdir, 0) else {
             return String::new();
         };
         let mut known = self
@@ -107,11 +113,13 @@ impl Cache {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut out = String::new();
-        for tool in usage.tools {
-            let command = tool.commands[0];
-            let version = known.entry(command.to_string()).or_insert_with(|| {
-                Command::new(command)
-                    .arg("--version")
+        for line in usage.tools.iter().flat_map(|t| t.versions.iter()) {
+            let version = known.entry(format!("{path}\0{line}")).or_insert_with(|| {
+                let mut words = line.split(' ');
+                Command::new(words.next().unwrap_or_default())
+                    .args(words)
+                    .current_dir(&self.root)
+                    .env("PATH", path)
                     .output()
                     .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
                     .unwrap_or_default()
@@ -152,7 +160,7 @@ impl Cache {
     }
 
     /// A recorded pass that is still valid for the current tree.
-    pub fn lookup(&self, key: &str, script: &str) -> Option<Entry> {
+    pub fn lookup(&self, key: &str, script: &str, workdir: &str) -> Option<Entry> {
         let entry: Entry =
             serde_json::from_str(&std::fs::read_to_string(self.file(key)).ok()?).ok()?;
         if entry.tree == self.tree {
@@ -164,13 +172,14 @@ impl Cache {
             &[
                 "diff",
                 "--name-only",
+                "-z",
                 "--no-renames",
                 &entry.tree,
                 &self.tree,
             ],
         )?;
-        let changed: Vec<&str> = diff.lines().filter(|l| !l.is_empty()).collect();
-        let usage = analyze(script, &self.root, ".", 0).ok()?;
+        let changed: Vec<&str> = diff.split('\0').filter(|l| !l.is_empty()).collect();
+        let usage = analyze(script, &self.root, workdir, 0).ok()?;
         if usage.tools.is_empty()
             || usage.writes_step_files
             || changed.iter().any(|f| usage.scripts.iter().any(|s| s == f))
@@ -193,12 +202,30 @@ impl Cache {
             .map_or(0, |d| d.as_secs());
         if let Ok(text) = serde_json::to_string(&entry) {
             // Write and rename, so a parallel leg never reads half a record.
-            let temp = self.dir.join(format!("{key}.{}.tmp", std::process::id()));
+            static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let temp = self
+                .dir
+                .join(format!("{key}.{}.{n}.tmp", std::process::id()));
             if std::fs::write(&temp, text).is_ok()
                 && std::fs::rename(&temp, self.file(key)).is_err()
             {
                 let _ = std::fs::remove_file(&temp);
             }
+        }
+    }
+}
+
+/// Removes records and temporary files that nobody touched for 30 days.
+fn prune(dir: &Path) {
+    let limit = std::time::Duration::from_secs(30 * 24 * 60 * 60);
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| t.elapsed().is_ok_and(|age| age > limit));
+        if old {
+            let _ = std::fs::remove_file(entry.path());
         }
     }
 }

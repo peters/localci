@@ -49,18 +49,9 @@ the user already said what to run, or said to just run it.
 
 ## 4. Run
 
-While you work, use `--fast`. It leaves out build and test steps whose inputs
-did not change since the merge base, reuses steps that passed on the same
-inputs, and runs independent jobs at the same time. `localci plan --affected`
-shows each decision and its reason first.
-
 ```sh
-localci run --fast -q --json                       # quick feedback while you iterate
 localci run <leg keys or job ids> [--skip TEXT | --skip LEG:N]... [--only TEXT] [--skip-setup] -q --json
 ```
-
-Before the PR opens, run once without `--fast` (or with `--affected` only, for a
-large repository), so every picked step really runs on the exact commit.
 
 - `-q` hides step output and prints the tail of a failing step's log.
 - `--json` prints the report on stdout. The report is also saved as
@@ -100,23 +91,21 @@ If the repository's own instructions (AGENTS.md, CONTRIBUTING.md) set a
 different PR process, follow those.
 
 1. **localci green.** Run the subset that matches the diff (sections 2-5).
-2. **Self-review, then the local review loop.** Always read the full diff
-   yourself first. Then, if `copilot` (GitHub Copilot CLI) is installed, run its
-   built-in review against the merge base. It uses the `gh` login and takes
+2. **Local review loop.** If `copilot` (GitHub Copilot CLI) is installed, run
+   its built-in review against the merge base. It uses the `gh` login and takes
    about a minute:
 
    ```sh
    base="$(git merge-base HEAD origin/HEAD 2>/dev/null || git merge-base HEAD origin/main)"
-   copilot -p "/review the changes on this branch compared to commit $base (run git diff $base HEAD). Read each changed file in full, not only the changed lines, and report problems in code that the change depends on. Check the repository rules in AGENTS.md and CONTRIBUTING.md as a checklist: required evidence such as screenshots or GIFs, tests and test procedures, documentation and bundled copies that must change together, and size limits. For each finding give file:line, a one-line title and a short explanation." \
-     -s --reasoning-effort high --allow-tool='shell(git:*)' --deny-tool='write' --no-ask-user
+   copilot -p "/review the changes on this branch compared to commit $base (run git diff $base HEAD). Also check the pull request rules in AGENTS.md and CONTRIBUTING.md. For each finding give file:line, a one-line title and a short explanation." \
+     -s --allow-tool='shell(git:*)' --deny-tool='write' --no-ask-user
    ```
 
-   Fix the real findings, run localci for the affected legs, and review again
-   until a round finds nothing actionable. This is a different engine from the
-   review on GitHub, so expect that review to find other things. Do not start
-   a separate review agent: this loop and the review on GitHub are the
-   independent reviews. If `copilot` is missing, offer
-   `npm install -g @github/copilot`; your own review then is the local review.
+   Fix the real findings, run localci for the affected legs, and review again.
+   Stop and ask the user after three rounds that keep finding new problems.
+   This is a different engine from the review on GitHub, so expect that review
+   to find other things. If `copilot` is missing, offer
+   `npm install -g @github/copilot`, or review the diff yourself.
 3. **Open the PR** with a normal commit message. GitHub CI runs once.
 4. **Review rounds.** For each round of PR review fixes: run localci for the
    affected legs, then end the commit message with `[skip ci]` and push.
