@@ -17,7 +17,7 @@ build cache still warm.**
 - **Your OS, your jobs.** It runs the jobs whose `runs-on` matches your machine (Linux, macOS or Windows) and tells you which ones need another OS.
 - **Real steps.** Shell steps, matrices, `needs`, outputs, `GITHUB_ENV`, `if:` conditions and `services:` (as Docker containers) behave like they do on GitHub. Setup actions such as `actions/checkout` are skipped, because your machine already has the checkout and the tools.
 - **Made for agents.** One command teaches Claude Code, Codex and other agents to run the right subset of your CI before they push.
-- **Tiny.** One static binary, about 600 KB to download, installed in under 2 seconds.
+- **Tiny.** One static binary, under 800 KB to download, installed in under 2 seconds.
 
 ## The numbers
 
