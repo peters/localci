@@ -34,6 +34,11 @@ OPTIONS:
       --no-services     do not start the jobs' services: containers (they run already)
       --input K=V       a workflow_dispatch input (repeatable)
   -k, --keep-going      keep running legs after one fails
+      --affected        leave out build and test steps whose inputs did not change since the base
+      --base REF        the base for --affected (default: the merge base with origin's default branch)
+      --cache           reuse steps that passed before on the same inputs
+  -j, --parallel N      run N legs at the same time (0: pick from the CPU count)
+      --fast            --affected --cache --parallel 0, for quick feedback while you work
   -q, --quiet           hide step output; print the tail of a failing step's log
       --json            print the plan or the run report as JSON on stdout
   -V, --version
@@ -49,6 +54,10 @@ struct Args {
     keep_going: bool,
     quiet: bool,
     json: bool,
+    affected: bool,
+    base: Option<String>,
+    cache: bool,
+    parallel: Option<usize>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -62,6 +71,10 @@ fn parse_args() -> Result<Args, String> {
         keep_going: false,
         quiet: false,
         json: false,
+        affected: false,
+        base: None,
+        cache: false,
+        parallel: None,
     };
     let pair = |v: String| {
         v.split_once('=')
@@ -92,6 +105,21 @@ fn parse_args() -> Result<Args, String> {
             "--ignore-if" => args.selection.ignore_if = true,
             "--no-services" => args.selection.no_services = true,
             "-k" | "--keep-going" => args.keep_going = true,
+            "--affected" => args.affected = true,
+            "--base" => args.base = Some(value(&arg)?),
+            "--cache" => args.cache = true,
+            "-j" | "--parallel" => {
+                let n = value(&arg)?;
+                args.parallel = Some(
+                    n.parse()
+                        .map_err(|_| format!("{arg} needs a number, got `{n}`"))?,
+                );
+            }
+            "--fast" => {
+                args.affected = true;
+                args.cache = true;
+                args.parallel.get_or_insert(0);
+            }
             "-q" | "--quiet" => args.quiet = true,
             "--json" => args.json = true,
             flag if flag.starts_with('-') => return Err(format!("unknown option `{flag}`")),
@@ -280,6 +308,34 @@ fn check(root: &Path, paths: &[String]) -> ExitCode {
     }
 }
 
+/// The `--affected` analysis, against `--base` or the pull request base.
+fn affected_for(
+    root: &Path,
+    args: &Args,
+    contexts: &Map<String, Value>,
+    workflow: &Path,
+) -> Result<Option<localci::affected::Affected>, String> {
+    if !args.affected {
+        return Ok(None);
+    }
+    let base = match &args.base {
+        Some(reference) => git(root, &["merge-base", "HEAD", reference])
+            .ok_or(format!("--base {reference}: no merge base with HEAD"))?,
+        None => match expr::to_text(&contexts["github"]["event"]["pull_request"]["base"]["sha"]) {
+            sha if !sha.is_empty() => sha,
+            _ => git(root, &["rev-parse", "HEAD~1"])
+                .ok_or("--affected: no base commit; pass --base REF")?,
+        },
+    };
+    let affected = localci::affected::Affected::new(root, &base, workflow)?;
+    eprintln!(
+        "localci: --affected: {} changed files since {}",
+        affected.changed().len(),
+        &base[..base.len().min(9)]
+    );
+    Ok(Some(affected))
+}
+
 fn main() -> ExitCode {
     match real_main() {
         Ok(code) => code,
@@ -314,9 +370,10 @@ fn real_main() -> Result<ExitCode, String> {
     let host = Os::host();
     let sel = &args.selection;
 
+    let affected = affected_for(&root, &args, &contexts, &path)?;
     if args.command != "run" {
         if args.json {
-            let mut plan = plan::to_json(&legs, sel, host, &contexts);
+            let mut plan = plan::to_json(&legs, sel, host, &contexts, affected.as_ref());
             plan["workflow"] = json!(path);
             plan["event"] = contexts["github"]["event_name"].clone();
             println!(
@@ -348,7 +405,7 @@ fn real_main() -> Result<ExitCode, String> {
                 expr::to_text(&contexts["github"]["event_name"]),
                 host.runner_name()
             );
-            plan::print(&legs, sel, host, &contexts);
+            plan::print(&legs, sel, host, &contexts, affected.as_ref());
         }
         return Ok(ExitCode::SUCCESS);
     }
@@ -378,15 +435,32 @@ fn real_main() -> Result<ExitCode, String> {
     if let Some(warning) = run::temp_warning() {
         eprintln!("localci: warning: {warning}");
     }
+    let cache = if args.cache {
+        let cache = localci::cache::Cache::open(&root, &dir);
+        if cache.is_none() {
+            eprintln!("localci: warning: --cache needs a Git repository; running without it");
+        }
+        cache
+    } else {
+        None
+    };
+    let parallel = match args.parallel {
+        None => 1,
+        Some(0) => std::thread::available_parallelism().map_or(1, |n| (n.get() / 8).clamp(1, 4)),
+        Some(n) => n,
+    };
     let opts = run::Options {
         workspace: root,
         run_dir: dir.clone(),
         keep_going: args.keep_going,
-        quiet: args.quiet,
+        quiet: args.quiet || parallel > 1,
         host,
+        affected,
+        cache,
+        parallel,
     };
     let started = Instant::now();
-    let reports = run::run_all(&picked, &workflow, &contexts, sel, &opts);
+    let reports = localci::schedule::run_all(&picked, &workflow, &contexts, sel, &opts);
     let failed = reports.iter().filter(|r| r.result == "failure").count();
     let report = json!({ "workflow": path, "logs": dir, "seconds": started.elapsed().as_secs_f64(), "failed": failed, "legs": reports });
     let text = serde_json::to_string_pretty(&report).unwrap_or_default();

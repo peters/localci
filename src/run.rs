@@ -2,17 +2,15 @@
 
 use crate::expr::{self, Ctx, Status};
 use crate::plan::Selection;
-use crate::workflow::{to_json, yaml_text, Leg, Os, Workflow};
+use crate::process::{arch, execute, minutes, print_tail, StepFiles};
+use crate::workflow::{yaml_text, Leg, Os, Workflow};
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 use std::{
     collections::BTreeMap,
     fs,
-    io::{Read, Write},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 pub struct Options {
@@ -21,6 +19,12 @@ pub struct Options {
     pub keep_going: bool,
     pub quiet: bool,
     pub host: Os,
+    /// `--affected`: leave out tool steps whose inputs did not change.
+    pub affected: Option<crate::affected::Affected>,
+    /// `--cache`: reuse steps that passed on the same inputs.
+    pub cache: Option<crate::cache::Cache>,
+    /// `--parallel`: the number of legs that run at the same time.
+    pub parallel: usize,
 }
 
 #[derive(Serialize)]
@@ -48,53 +52,7 @@ pub struct LegReport {
     pub steps: Vec<StepReport>,
 }
 
-pub fn run_all(
-    legs: &[&Leg],
-    workflow: &Workflow,
-    base: &Map<String, Value>,
-    sel: &Selection,
-    opts: &Options,
-) -> Vec<LegReport> {
-    let mut needs = Map::new();
-    let mut reports = Vec::new();
-    let mut failed = false;
-    for leg in order(legs) {
-        if failed && !opts.keep_going {
-            reports.push(skipped(
-                leg,
-                "an earlier leg failed (use --keep-going to continue)".into(),
-            ));
-            continue;
-        }
-        let (report, outputs) = run_leg(leg, workflow, base, &needs, sel, opts);
-        failed |= report.result == "failure";
-        needs.insert(
-            leg.job.id.clone(),
-            json!({ "result": report.result, "outputs": outputs }),
-        );
-        reports.push(report);
-    }
-    reports
-}
-
-/// Picked legs with every picked dependency before its dependents.
-fn order<'a, 'w>(legs: &[&'a Leg<'w>]) -> Vec<&'a Leg<'w>> {
-    let mut pending: Vec<&Leg> = legs.to_vec();
-    let mut out: Vec<&Leg> = Vec::new();
-    while !pending.is_empty() {
-        let ready = pending.iter().position(|leg| {
-            leg.job
-                .needs
-                .list()
-                .iter()
-                .all(|n| !pending.iter().any(|p| &p.job.id == n))
-        });
-        out.push(pending.remove(ready.unwrap_or(0)));
-    }
-    out
-}
-
-fn skipped(leg: &Leg, reason: String) -> LegReport {
+pub(crate) fn skipped(leg: &Leg, reason: String) -> LegReport {
     LegReport {
         key: leg.key.clone(),
         name: leg.name.clone(),
@@ -124,7 +82,7 @@ fn eval_env(
     contexts.insert("env".into(), Value::Object(env.clone()));
 }
 
-fn run_leg(
+pub(crate) fn run_leg(
     leg: &Leg,
     workflow: &Workflow,
     base: &Map<String, Value>,
@@ -286,9 +244,74 @@ fn run_leg(
                 continue;
             }
         }
+        if let Some(reason) = opts
+            .affected
+            .as_ref()
+            .and_then(|a| a.leaves_out(leg, index, step))
+        {
+            eprintln!(
+                "── {} · {index}/{total} {label}: skipped, {reason}",
+                leg.name
+            );
+            report.reason = Some(reason);
+            reports.push(report);
+            continue;
+        }
         let mut step_env = env.clone();
         let mut step_contexts = contexts.clone();
         eval_env(&step.env, &mut step_env, &mut step_contexts);
+        let cache_key = opts.cache.as_ref().map(|_| {
+            let script = expr::interpolate(
+                step.run.as_deref().unwrap_or_default(),
+                &Ctx {
+                    contexts: &step_contexts,
+                    status,
+                },
+            )
+            .unwrap_or_default();
+            let shell = step
+                .shell
+                .as_deref()
+                .or(leg.job.defaults.run.shell.as_deref())
+                .or(workflow.defaults.run.shell.as_deref());
+            let workdir = step.working_directory.as_deref().or(leg
+                .job
+                .defaults
+                .run
+                .working_directory
+                .as_deref());
+            (
+                crate::cache::Cache::key(
+                    &script,
+                    shell,
+                    workdir,
+                    &step_env,
+                    opts.host.runner_name(),
+                ),
+                script,
+            )
+        });
+        let hit = match (&opts.cache, &cache_key) {
+            (Some(cache), Some((key, script))) if step.run.is_some() => cache.lookup(key, script),
+            _ => None,
+        };
+        if let Some(entry) = hit {
+            for (k, v) in &entry.env {
+                env.insert(k.clone(), Value::String(v.clone()));
+            }
+            extra_path.splice(0..0, entry.path.iter().cloned());
+            if let Some(id) = &step.id {
+                steps_ctx.insert(id.clone(), json!({ "outputs": entry.outputs, "outcome": "success", "conclusion": "success" }));
+            }
+            eprintln!(
+                "── {} · {index}/{total} {label}: passed before on the same inputs (cache)",
+                leg.name
+            );
+            report.outcome = "success";
+            report.reason = Some("cached: passed before on the same inputs".into());
+            reports.push(report);
+            continue;
+        }
         eprintln!("\n── {} · {index}/{total} {label}", leg.name);
         let step_start = Instant::now();
         let files = StepFiles::new(&dir, index);
@@ -309,6 +332,15 @@ fn run_leg(
         report.seconds = step_start.elapsed().as_secs_f64();
         report.log = Some(log.clone());
         let (outputs, new_env, new_path) = files.read();
+        if let (Ok(()), Some(cache), Some((key, _))) = (&outcome, &opts.cache, &cache_key) {
+            let entry = crate::cache::Entry {
+                outputs: outputs.clone(),
+                env: new_env.clone(),
+                path: new_path.clone(),
+                ..Default::default()
+            };
+            cache.record(key, entry);
+        }
         for (k, v) in new_env {
             env.insert(k, Value::String(v));
         }
@@ -394,226 +426,6 @@ fn run_leg(
     (report, Value::Object(outputs))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn execute(
-    leg: &Leg,
-    workflow: &Workflow,
-    step: &crate::workflow::Step,
-    env: &Map<String, Value>,
-    contexts: &Map<String, Value>,
-    extra_path: &[String],
-    files: &StepFiles,
-    log: &Path,
-    temp: &Path,
-    deadline: Option<Instant>,
-    opts: &Options,
-) -> Result<(), String> {
-    let ctx = Ctx {
-        contexts,
-        status: Status::Success,
-    };
-    let script = expr::interpolate(step.run.as_deref().unwrap_or_default(), &ctx)?;
-    let shell = step
-        .shell
-        .clone()
-        .or_else(|| leg.job.defaults.run.shell.clone())
-        .or_else(|| workflow.defaults.run.shell.clone());
-    let workdir = step
-        .working_directory
-        .clone()
-        .or_else(|| leg.job.defaults.run.working_directory.clone())
-        .or_else(|| workflow.defaults.run.working_directory.clone())
-        .map(|d| expr::interpolate(&d, &ctx).unwrap_or(d));
-    let mut command = crate::shell::command(
-        shell.as_deref(),
-        &script,
-        &files.dir,
-        files.index,
-        opts.host,
-    )?;
-    command.current_dir(workdir.map_or_else(|| opts.workspace.clone(), |d| opts.workspace.join(d)));
-    let github = &contexts["github"];
-    let text = |v: &Value| expr::to_text(v);
-    command
-        .env("CI", "true")
-        .env("LOCALCI", "true")
-        .env("GITHUB_WORKSPACE", &opts.workspace)
-        .env("GITHUB_REPOSITORY", text(&github["repository"]))
-        .env("GITHUB_REF", text(&github["ref"]))
-        .env("GITHUB_SHA", text(&github["sha"]))
-        .env("GITHUB_EVENT_NAME", text(&github["event_name"]))
-        .env("GITHUB_JOB", &leg.job.id)
-        .env("GITHUB_RUN_ID", "0")
-        .env("RUNNER_OS", opts.host.runner_name())
-        .env("RUNNER_ARCH", arch())
-        .env("RUNNER_TEMP", temp)
-        .env("RUNNER_NAME", "localci")
-        .env("GITHUB_OUTPUT", &files.output)
-        .env("GITHUB_ENV", &files.env)
-        .env("GITHUB_PATH", &files.path)
-        .env(
-            "GITHUB_STATE",
-            files.dir.join(format!("step-{}.state", files.index)),
-        )
-        .env("GITHUB_STEP_SUMMARY", files.dir.join("summary.md"));
-    for (k, v) in env {
-        command.env(k, text(v));
-    }
-    if !extra_path.is_empty() {
-        let current = env
-            .get("PATH")
-            .map(text)
-            .or_else(|| std::env::var("PATH").ok())
-            .unwrap_or_default();
-        let sep = if cfg!(windows) { ";" } else { ":" };
-        command.env("PATH", format!("{}{sep}{current}", extra_path.join(sep)));
-    }
-    let limit = [
-        minutes(step.timeout_minutes.as_ref()).map(|d| Instant::now() + d),
-        deadline,
-    ]
-    .into_iter()
-    .flatten()
-    .min();
-    spawn_teed(command, log, limit, opts.quiet)
-}
-
-fn spawn_teed(
-    mut command: Command,
-    log: &Path,
-    limit: Option<Instant>,
-    quiet: bool,
-) -> Result<(), String> {
-    let file = Arc::new(Mutex::new(
-        fs::File::create(log).map_err(|e| format!("cannot create log: {e}"))?,
-    ));
-    let mut child = command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("cannot start {:?}: {e}", command.get_program()))?;
-    let pumps: Vec<_> = [
-        child
-            .stdout
-            .take()
-            .map(|s| Box::new(s) as Box<dyn Read + Send>),
-        child
-            .stderr
-            .take()
-            .map(|s| Box::new(s) as Box<dyn Read + Send>),
-    ]
-    .into_iter()
-    .flatten()
-    .map(|mut source| {
-        let file = Arc::clone(&file);
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 16 * 1024];
-            while let Ok(n) = source.read(&mut buf) {
-                if n == 0 {
-                    break;
-                }
-                if let Ok(mut f) = file.lock() {
-                    let _ = f.write_all(&buf[..n]);
-                }
-                if !quiet {
-                    let _ = std::io::stderr().write_all(&buf[..n]);
-                }
-            }
-        })
-    })
-    .collect();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Ok(status),
-            Ok(None) if limit.is_some_and(|l| Instant::now() >= l) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break Err("timed out (timeout-minutes)".to_string());
-            }
-            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-            Err(e) => break Err(e.to_string()),
-        }
-    };
-    for pump in pumps {
-        let _ = pump.join();
-    }
-    let status = status?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(status
-            .code()
-            .map_or_else(|| "killed by a signal".into(), |c| format!("exit {c}")))
-    }
-}
-
-type StepWrites = (Map<String, Value>, Vec<(String, String)>, Vec<String>);
-
-struct StepFiles {
-    dir: PathBuf,
-    index: usize,
-    output: PathBuf,
-    env: PathBuf,
-    path: PathBuf,
-}
-
-impl StepFiles {
-    fn new(dir: &Path, index: usize) -> StepFiles {
-        let file = |kind: &str| {
-            let p = dir.join(format!("step-{index}.{kind}"));
-            let _ = fs::write(&p, "");
-            p
-        };
-        StepFiles {
-            dir: dir.to_path_buf(),
-            index,
-            output: file("output"),
-            env: file("env"),
-            path: file("path"),
-        }
-    }
-
-    /// The step's outputs, its `GITHUB_ENV` additions, and its `GITHUB_PATH` entries.
-    fn read(&self) -> StepWrites {
-        let read = |p: &Path| fs::read_to_string(p).unwrap_or_default();
-        let outputs = parse_kv(&read(&self.output))
-            .into_iter()
-            .map(|(k, v)| (k, Value::String(v)))
-            .collect();
-        let path = read(&self.path)
-            .lines()
-            .map(str::trim)
-            .filter(|l| !l.is_empty())
-            .map(String::from)
-            .rev()
-            .collect();
-        (outputs, parse_kv(&read(&self.env)), path)
-    }
-}
-
-/// `KEY=value` lines and `KEY<<DELIM` blocks, as GitHub's environment files use.
-pub fn parse_kv(text: &str) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    let mut lines = text.lines();
-    while let Some(line) = lines.next() {
-        let line = line.trim_end_matches('\r');
-        if let Some((key, delim)) = line.split_once("<<") {
-            let mut value = Vec::new();
-            for l in lines.by_ref() {
-                if l.trim_end_matches('\r') == delim {
-                    break;
-                }
-                value.push(l.trim_end_matches('\r'));
-            }
-            out.push((key.to_string(), value.join("\n")));
-        } else if let Some((key, value)) = line.split_once('=') {
-            out.push((key.to_string(), value.to_string()));
-        }
-    }
-    out
-}
-
 /// Creates `path` and its missing parents for this user only, as a runner's
 /// `RUNNER_TEMP` is. Tests that keep private files refuse a group-writable parent.
 pub fn private_dir(path: &Path) -> std::io::Result<()> {
@@ -641,44 +453,4 @@ pub fn temp_warning() -> Option<String> {
         }
     }
     None
-}
-
-fn minutes(v: Option<&serde_yaml::Value>) -> Option<Duration> {
-    let m = v
-        .map(to_json)
-        .and_then(|v| v.as_f64().or_else(|| expr::to_text(&v).parse().ok()))?;
-    (m > 0.0).then(|| Duration::from_secs_f64(m * 60.0))
-}
-
-fn arch() -> &'static str {
-    match std::env::consts::ARCH {
-        "aarch64" => "ARM64",
-        "x86" => "X86",
-        "arm" => "ARM",
-        _ => "X64",
-    }
-}
-
-fn print_tail(log: &Path, n: usize) {
-    let text = fs::read_to_string(log).unwrap_or_default();
-    let lines: Vec<&str> = text.lines().collect();
-    for line in &lines[lines.len().saturating_sub(n)..] {
-        eprintln!("   │ {line}");
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn env_file_formats() {
-        let kv = super::parse_kv("a=1\nmulti<<EOF\nx\ny\nEOF\nb=c=d\n");
-        assert_eq!(
-            kv,
-            vec![
-                ("a".into(), "1".into()),
-                ("multi".into(), "x\ny".into()),
-                ("b".into(), "c=d".into())
-            ]
-        );
-    }
 }

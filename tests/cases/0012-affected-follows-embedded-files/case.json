@@ -1,0 +1,30 @@
+{
+  "description": "--affected treats a file that Rust source names (here through include_str!) as a Rust input, so a change to it runs the Rust steps.",
+  "args": [
+    "run",
+    "--affected",
+    "--base",
+    "base",
+    "--json",
+    "-q"
+  ],
+  "expect": {
+    "failed": 0,
+    "legs": [
+      {
+        "steps": [
+          {
+            "outcome": "success"
+          },
+          {
+            "outcome": "success"
+          }
+        ]
+      }
+    ]
+  },
+  "hosts": [
+    "linux",
+    "macos"
+  ]
+}

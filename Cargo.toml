@@ -1,6 +1,6 @@
 [package]
 name = "localci"
-version = "0.1.0-beta2"
+version = "0.1.0-beta3"
 edition = "2021"
 description = "Run the GitHub Actions jobs that match this host, locally, so CI feedback does not wait on GitHub"
 license = "MIT"

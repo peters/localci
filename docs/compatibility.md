@@ -23,6 +23,9 @@ the test that keeps the behavior correct. Add a row for each new case folder.
 | `services:` | Docker containers with health checks and mapped ports. | case 0006 |
 | `RUNNER_TEMP` | A private folder (mode 700) for each job. localci warns when `TMPDIR` is writable by other users. | case 0010 |
 | `timeout-minutes` | Stops the step process after the time. | not tested |
+| `--affected` | Leaves out tool steps (Cargo, Node, dotnet, Go, Gradle, Swift) whose inputs did not change since the base. Unknown commands always run. See ADR-0009. | cases 0011, 0012, 0013 |
+| `--cache` | Uses the result of a step that passed on the same inputs, with its outputs. See ADR-0010. | case 0014 |
+| `--parallel` | Runs independent legs at the same time, in the order of `needs`. See ADR-0011. | case 0015 |
 | `uses:` actions | Not run. The step shows `skipped`. See ADR-0002. | case 0001 |
 | Reusable workflow calls | Not run. `localci check` shows a note. | none |
 | `container:` | Ignored. The steps run on the host. | none |

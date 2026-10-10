@@ -163,6 +163,7 @@ pub fn to_json(
     selection: &Selection,
     host: Os,
     base: &serde_json::Map<String, Value>,
+    affected: Option<&crate::affected::Affected>,
 ) -> Value {
     let legs: Vec<Value> = legs
         .iter()
@@ -181,8 +182,9 @@ pub fn to_json(
                         "command": first_command(step),
                         "lines": step.run.as_deref().map_or(0, |r| r.lines().count()),
                         "if": step.condition.as_ref().map(yaml_text),
-                        "leave_out": selection.leaves_out(leg, i + 1, step)
-                            .or_else(|| (static_if(leg, step, base) == Some(false)).then_some("if: false for this leg")),
+                        "leave_out": selection.leaves_out(leg, i + 1, step).map(String::from)
+                            .or_else(|| (static_if(leg, step, base) == Some(false)).then(|| "if: false for this leg".to_string()))
+                            .or_else(|| affected.and_then(|a| a.leaves_out(leg, i + 1, step))),
                     })
                 })
                 .collect();
@@ -205,7 +207,13 @@ pub fn to_json(
     json!({ "host": host, "legs": legs })
 }
 
-pub fn print(legs: &[Leg], selection: &Selection, host: Os, base: &serde_json::Map<String, Value>) {
+pub fn print(
+    legs: &[Leg],
+    selection: &Selection,
+    host: Os,
+    base: &serde_json::Map<String, Value>,
+    affected: Option<&crate::affected::Affected>,
+) {
     for leg in legs {
         let runnable = leg.os == Some(host);
         let selected = runnable && selection.picks(leg);
@@ -231,12 +239,21 @@ pub fn print(legs: &[Leg], selection: &Selection, host: Os, base: &serde_json::M
         }
         for (i, step) in leg.job.steps.iter().enumerate() {
             let k = kind(step);
+            let unaffected = affected.and_then(|a| a.leaves_out(leg, i + 1, step));
             let status = match selection.leaves_out(leg, i + 1, step) {
                 Some(reason) => format!("skip  ({reason})"),
                 None if static_if(leg, step, base) == Some(false) => {
                     "skip  (if: false for this leg)".into()
                 }
-                None => k.as_str().to_string(),
+                None if unaffected.is_some() => {
+                    format!("skip  ({})", unaffected.unwrap_or_default())
+                }
+                None => match affected.map(|a| a.decide(leg, i + 1, step)) {
+                    Some(Err(why)) if k == Kind::Run && !why.contains("no known build tool") => {
+                        format!("run   (runs: {why})")
+                    }
+                    _ => k.as_str().to_string(),
+                },
             };
             let cond = step
                 .condition

@@ -1,0 +1,6 @@
+{
+  "description": "In a workspace without a root crate, a bare file name in Rust source does not make a root-level file a Rust input: Cargo runs tests in each crate's folder. Found with Horizon, where Rust code names a user's AGENTS.md (2026-10-10).",
+  "args": ["run", "--affected", "--base", "base", "--json", "-q"],
+  "expect": {"failed": 0, "legs": [{"steps": [{"outcome": "success"}, {"outcome": "skipped", "reason": "~affected: no Rust inputs changed"}]}]},
+  "hosts": ["linux", "macos"]
+}

@@ -1,0 +1,15 @@
+on: push
+jobs:
+  build:
+    runs-on: localci-host
+    steps:
+      - name: Tools on PATH
+        run: echo "$PWD/bin" >> "$GITHUB_PATH"
+      - name: Rust tests
+        run: cargo test --locked
+      - name: Node tests
+        run: npm test
+      - name: A script that only runs cargo
+        run: bash scripts/shard.sh ui
+      - name: Unknown command
+        run: python3 -c "print('always runs')"

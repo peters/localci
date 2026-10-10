@@ -15,6 +15,9 @@ uses ASD-STE100 Simplified Technical English (STE).
 | [ADR-0006](0006-private-corpus-check.md) | Examine private workflows outside the repository | Accepted |
 | [ADR-0007](0007-case-folders-for-regressions.md) | Record each bug as a case folder | Accepted |
 | [ADR-0008](0008-localci-annotations.md) | Mark local skips in the workflow with LOCALCI | Accepted |
+| [ADR-0009](0009-affected-steps.md) | Leave out tool steps whose inputs did not change | Accepted |
+| [ADR-0010](0010-step-cache.md) | Use the result of a step that passed on the same inputs | Accepted |
+| [ADR-0011](0011-parallel-legs.md) | Run independent legs at the same time | Accepted |
 
 ## When to write a new record
 

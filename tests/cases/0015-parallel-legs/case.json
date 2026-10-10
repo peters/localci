@@ -1,0 +1,6 @@
+{
+  "description": "--parallel runs independent legs at the same time, starts a leg only after the jobs it needs, and passes their outputs. See ADR-0011.",
+  "args": ["run", "--parallel", "2", "--json", "-q"],
+  "expect": {"failed": 0, "legs": [{"key": "first", "result": "success"}, {"key": "second", "result": "success"}, {"key": "last", "result": "success"}]},
+  "hosts": ["linux", "macos"]
+}

@@ -1,0 +1,12 @@
+on: push
+jobs:
+  build:
+    runs-on: localci-host
+    steps:
+      - name: Tools on PATH
+        run: echo "$PWD/bin" >> "$GITHUB_PATH"
+      - id: gen
+        name: A Rust step with an output
+        run: cargo metadata
+      - name: Reads the output
+        run: test "${{ steps.gen.outputs.value }}" = 42

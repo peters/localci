@@ -1,0 +1,8 @@
+mkdir -p bin scripts src web docs
+printf '#!/bin/sh\necho "value=42" >> "$GITHUB_OUTPUT"\n' > bin/cargo
+printf '#!/bin/sh\nexit 0\n' > bin/npm
+chmod +x bin/cargo bin/npm
+echo 'pub const GUIDE: &str = include_str!("../docs/embedded.md");' > src/lib.rs
+echo '# Embedded' > docs/embedded.md
+git add -A && git commit -qm base && git tag base
+echo changed >> docs/embedded.md

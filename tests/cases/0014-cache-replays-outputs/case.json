@@ -1,0 +1,33 @@
+{
+  "description": "--cache reuses a tool step that passed on the same inputs, after a change that is not one of its inputs, and replays its outputs for later steps. See ADR-0010.",
+  "repeat": 2,
+  "args": [
+    "run",
+    "--cache",
+    "--json",
+    "-q"
+  ],
+  "expect": {
+    "failed": 0,
+    "legs": [
+      {
+        "steps": [
+          {
+            "outcome": "success"
+          },
+          {
+            "outcome": "success",
+            "reason": "~cached"
+          },
+          {
+            "outcome": "success"
+          }
+        ]
+      }
+    ]
+  },
+  "hosts": [
+    "linux",
+    "macos"
+  ]
+}

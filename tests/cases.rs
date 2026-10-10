@@ -5,6 +5,11 @@
 //! - `exit`: the expected exit code (default 0).
 //! - `expect`: JSON that stdout must contain. Objects match on the keys they name;
 //!   arrays match item by item and must have the same length.
+//! - `setup.sh` (optional file): runs in the repository first, for example to commit a
+//!   base and then change files. Git has a test identity.
+//! - `repeat`: how many times localci runs (default 1); `expect` checks the last run.
+//! - `between.sh` (optional file): runs before each repeat after the first.
+//! - An expected string that starts with `~` only has to be contained in the actual one.
 //! - `hosts`: the host systems that run the case (default: all).
 //! - `requires`: tools that must work first, for example `docker`.
 
@@ -48,6 +53,8 @@ fn contains(expected: &Value, actual: &Value, at: &str, errors: &mut Vec<String>
                 contains(w, h, &format!("{at}[{i}]"), errors);
             }
         }
+        (Value::String(want), Value::String(have))
+            if want.starts_with('~') && have.contains(&want[1..]) => {}
         _ if expected == actual => {}
         _ => errors.push(format!("{at}: expected {expected}, got {actual}")),
     }
@@ -98,12 +105,48 @@ fn run_case(dir: &Path) -> Result<Option<String>, String> {
         .current_dir(&work)
         .status()
         .map_err(|e| e.to_string())?;
+    let shell = |script: &str| -> Result<(), String> {
+        let file = dir.join(script);
+        if file.is_file() {
+            let status = Command::new("sh")
+                .args(["-eu".as_ref(), file.as_os_str()])
+                .current_dir(&work)
+                .envs([
+                    ("GIT_AUTHOR_NAME", "localci"),
+                    ("GIT_AUTHOR_EMAIL", "localci@example.invalid"),
+                    ("GIT_COMMITTER_NAME", "localci"),
+                    ("GIT_COMMITTER_EMAIL", "localci@example.invalid"),
+                ])
+                .status()
+                .map_err(|e| e.to_string())?;
+            if !status.success() {
+                return Err(format!("{script} failed"));
+            }
+        }
+        Ok(())
+    };
+    shell("setup.sh")?;
+    // The step cache lives outside the repository, so it never shows up as a change.
+    let cache = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("cases-cache")
+        .join(name);
+    let _ = fs::remove_dir_all(&cache);
     let args = listed("args");
-    let out = Command::new(env!("CARGO_BIN_EXE_localci"))
-        .args(&args)
-        .current_dir(&work)
-        .output()
-        .map_err(|e| e.to_string())?;
+    let mut out = None;
+    for round in 0..case["repeat"].as_u64().unwrap_or(1) {
+        if round > 0 {
+            shell("between.sh")?;
+        }
+        out = Some(
+            Command::new(env!("CARGO_BIN_EXE_localci"))
+                .args(&args)
+                .current_dir(&work)
+                .env("XDG_CACHE_HOME", &cache)
+                .output()
+                .map_err(|e| e.to_string())?,
+        );
+    }
+    let out = out.ok_or("repeat must be at least 1")?;
     let stderr = String::from_utf8_lossy(&out.stderr);
     let want_exit = case["exit"].as_i64().unwrap_or(0);
     if out.status.code().map(i64::from) != Some(want_exit) {

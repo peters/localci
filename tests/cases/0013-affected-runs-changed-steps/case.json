@@ -1,0 +1,34 @@
+{
+  "description": "--affected runs a step whose own definition changed in the workflow, even when no input file changed. The other tool steps stay left out.",
+  "args": [
+    "run",
+    "--affected",
+    "--base",
+    "base",
+    "--json",
+    "-q"
+  ],
+  "expect": {
+    "failed": 0,
+    "legs": [
+      {
+        "steps": [
+          {
+            "outcome": "success"
+          },
+          {
+            "outcome": "skipped",
+            "reason": "~affected: no Rust inputs changed"
+          },
+          {
+            "outcome": "success"
+          }
+        ]
+      }
+    ]
+  },
+  "hosts": [
+    "linux",
+    "macos"
+  ]
+}

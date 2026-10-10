@@ -75,7 +75,26 @@ localci run -w release                # another workflow file
 localci check                         # can localci handle every workflow here?
 ```
 
-Add `--json -q` for a machine-readable report. Each step's log is kept, and the
+Add `--json -q` for a machine-readable report.
+
+### Fast mode
+
+```sh
+localci run --fast
+```
+
+`--fast` is three things at once:
+
+- `--affected`: leave out build and test steps (Cargo, npm, dotnet, Go, Gradle,
+  Swift) when none of their inputs changed since your branch left the default
+  branch. A step whose commands localci cannot read always runs.
+- `--cache`: reuse a step that already passed on the same inputs, including its outputs.
+- `--parallel 0`: run independent jobs at the same time.
+
+On Horizon, a large Rust workspace, a documentation and CI change went from a
+23-minute full Linux run to 136 seconds with `--fast`, and to 0 seconds for a
+second run with no changes. `localci plan --affected` shows why each step runs
+or not. Run once without `--fast` before you push for review. Each step's log is kept, and the
 path is printed at the end.
 
 ## Skip things locally, keep them on GitHub

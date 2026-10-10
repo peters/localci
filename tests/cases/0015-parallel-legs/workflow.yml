@@ -1,0 +1,21 @@
+on: push
+jobs:
+  first:
+    runs-on: localci-host
+    outputs:
+      a: ${{ steps.out.outputs.a }}
+    steps:
+      - id: out
+        run: sleep 1 && echo "a=1" >> "$GITHUB_OUTPUT"
+  second:
+    runs-on: localci-host
+    outputs:
+      b: ${{ steps.out.outputs.b }}
+    steps:
+      - id: out
+        run: sleep 1 && echo "b=2" >> "$GITHUB_OUTPUT"
+  last:
+    needs: [first, second]
+    runs-on: localci-host
+    steps:
+      - run: test "${{ needs.first.outputs.a }}${{ needs.second.outputs.b }}" = 12
