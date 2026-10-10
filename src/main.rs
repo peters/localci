@@ -374,7 +374,10 @@ fn real_main() -> Result<ExitCode, String> {
         });
     }
     let dir = run_dir(&root);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    run::private_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    if let Some(warning) = run::temp_warning() {
+        eprintln!("localci: warning: {warning}");
+    }
     let opts = run::Options {
         workspace: root,
         run_dir: dir.clone(),

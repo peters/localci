@@ -137,7 +137,7 @@ fn run_leg(
         .run_dir
         .join(leg.key.replace(['#', '/', '\\', ' '], "-"));
     let temp = dir.join("tmp");
-    if let Err(e) = fs::create_dir_all(&temp) {
+    if let Err(e) = private_dir(&temp) {
         return (
             skipped(leg, format!("cannot create {}: {e}", temp.display())),
             Value::Null,
@@ -612,6 +612,35 @@ pub fn parse_kv(text: &str) -> Vec<(String, String)> {
         }
     }
     out
+}
+
+/// Creates `path` and its missing parents for this user only, as a runner's
+/// `RUNNER_TEMP` is. Tests that keep private files refuse a group-writable parent.
+pub fn private_dir(path: &Path) -> std::io::Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.create(path)
+}
+
+/// A warning when other users can write to the temp folder and it is not sticky,
+/// which makes tests that create private files fail.
+pub fn temp_warning() -> Option<String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = std::env::temp_dir();
+        let mode = fs::metadata(&temp).ok()?.permissions().mode();
+        if mode & 0o022 != 0 && mode & 0o1000 == 0 {
+            return Some(format!(
+                "{} (mode {:o}) is writable by other users and not sticky; tests that create private files may fail. Use a folder with mode 700 as TMPDIR.",
+                temp.display(),
+                mode & 0o7777
+            ));
+        }
+    }
+    None
 }
 
 fn minutes(v: Option<&serde_yaml::Value>) -> Option<Duration> {

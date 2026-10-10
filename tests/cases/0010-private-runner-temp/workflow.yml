@@ -1,0 +1,11 @@
+on: push
+jobs:
+  temp:
+    runs-on: localci-host
+    steps:
+      - name: RUNNER_TEMP belongs to this user only
+        shell: python
+        run: |
+          import os, stat, sys
+          mode = stat.S_IMODE(os.stat(os.environ["RUNNER_TEMP"]).st_mode)
+          sys.exit(0 if mode & 0o077 == 0 else 1)

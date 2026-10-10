@@ -21,6 +21,7 @@ the test that keeps the behavior correct. Add a row for each new case folder.
 | YAML booleans and numbers as text | `run: true` and `name: 3` are text, as in GitHub. | case 0007 |
 | `vars.LOCALCI` and `env.LOCALCI` | `true` in a local run, empty on GitHub. Use them in `if:` to skip a job or a step locally. See ADR-0008. | case 0008 |
 | `services:` | Docker containers with health checks and mapped ports. | case 0006 |
+| `RUNNER_TEMP` | A private folder (mode 700) for each job. localci warns when `TMPDIR` is writable by other users. | case 0010 |
 | `timeout-minutes` | Stops the step process after the time. | not tested |
 | `uses:` actions | Not run. The step shows `skipped`. See ADR-0002. | case 0001 |
 | Reusable workflow calls | Not run. `localci check` shows a note. | none |

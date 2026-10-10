@@ -1,0 +1,6 @@
+{
+  "description": "RUNNER_TEMP and the run folders are private (mode 700), as on a runner. Tests that keep private files refuse a group-writable parent (found with Horizon, 2026-10-10).",
+  "args": ["run", "--json", "-q"],
+  "expect": {"failed": 0, "legs": [{"result": "success"}]},
+  "hosts": ["linux", "macos"]
+}
