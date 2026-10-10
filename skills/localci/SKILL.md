@@ -49,9 +49,21 @@ the user already said what to run, or said to just run it.
 
 ## 4. Run
 
+While you iterate, use `--fast`. It leaves out check steps (tests, lint,
+format) whose inputs did not change since the merge base, reuses steps that
+passed on the same inputs, and runs independent jobs at the same time.
+`localci plan --affected` shows each decision and its reason first. Steps that
+localci cannot read (for example Python scripts) always run, so for a change
+that touches one area, naming the job is faster still.
+
 ```sh
+localci run --fast -q --json                      # quick feedback while you iterate
+localci run repo-checks -q --json                 # only the job that the diff touches
 localci run <leg keys or job ids> [--skip TEXT | --skip LEG:N]... [--only TEXT] [--skip-setup] -q --json
 ```
+
+Before the PR opens, run once without `--fast`, so every picked step really runs
+on the exact commit.
 
 - `-q` hides step output and prints the tail of a failing step's log.
 - `--json` prints the report on stdout. The report is also saved as
@@ -91,29 +103,43 @@ If the repository's own instructions (AGENTS.md, CONTRIBUTING.md) set a
 different PR process, follow those.
 
 1. **localci green.** Run the subset that matches the diff (sections 2-5).
-2. **Local review loop.** If `copilot` (GitHub Copilot CLI) is installed, run
-   its built-in review against the merge base. It uses the `gh` login and takes
-   about a minute:
+2. **Self-review, then the local review loop.** Always read the full diff
+   yourself first. Then run Copilot CLI's built-in review with the prompt below.
+   It uses the `gh` login and takes one to three minutes. Ask for concrete
+   inputs: a general "review this" prompt misses most of what the review on
+   GitHub finds later.
 
    ```sh
    base="$(git merge-base HEAD origin/HEAD 2>/dev/null || git merge-base HEAD origin/main)"
-   copilot -p "/review the changes on this branch compared to commit $base (run git diff $base HEAD). Also check the pull request rules in AGENTS.md and CONTRIBUTING.md. For each finding give file:line, a one-line title and a short explanation." \
-     -s --allow-tool='shell(git:*)' --deny-tool='write' --no-ask-user
+   copilot -p "/review the changes on this branch compared to commit $base (run git diff $base HEAD). Read each changed file in full, not only the changed lines, and the code it depends on. Find bugs: for each, give file:line, a one-line title, a concrete input or sequence of events, and the wrong result. Also check the pull request rules in AGENTS.md and CONTRIBUTING.md as a checklist: required evidence such as GIFs, tests and test procedures, files that must change together, and size limits. Only report problems with a concrete failure; skip style. If there are no significant issues, say so." \
+     -s --reasoning-effort high --allow-tool='shell(git:*)' --deny-tool='write' --no-ask-user
    ```
 
-   Fix the real findings, run localci for the affected legs, and review again.
-   Stop and ask the user after three rounds that keep finding new problems.
-   This is a different engine from the review on GitHub, so expect that review
-   to find other things. If `copilot` is missing, offer
-   `npm install -g @github/copilot`, or review the diff yourself.
-3. **Open the PR** with a normal commit message. GitHub CI runs once.
-4. **Review rounds.** For each round of PR review fixes: run localci for the
-   affected legs, then end the commit message with `[skip ci]` and push.
-   GitHub starts no workflow for a PR whose head commit carries that marker.
+   Fix the real findings, run localci for the affected jobs, commit, and review
+   again until a round finds nothing actionable. Do not start a separate review
+   agent: this loop and the review on GitHub are the independent reviews. If
+   `copilot` is missing, offer `npm install -g @github/copilot`; your own
+   review then is the local review.
+3. **Open the PR** with a normal commit message. GitHub CI runs once. The
+   review on GitHub is the final gate, not the place to iterate: request it
+   only for a head that the local loop found clean.
+4. **Review rounds.** When the review on GitHub reports findings, fix all of
+   them, run the local review loop until it is clean again, run localci for
+   the affected jobs, then push once with `[skip ci]` at the end of the commit
+   message and request the next review. GitHub starts no workflow for a head
+   commit that carries that marker.
 5. **Final head.** When the reviewers are satisfied, push the head without the
    marker (amend the message or add an empty commit) so full CI runs on the
-   exact head. Required checks stay "Expected" until that run passes.
-6. **Never on the default branch.** GitHub reads the whole commit message. Make
+   exact head. Required checks stay "Expected" until that run passes. If the
+   next GitHub round will probably be the last one, push the fix without the
+   marker at once, so CI and the review run on the same head.
+6. **Ready to merge** when CI passed on the exact head, no review thread is
+   open, and the review on GitHub says "Approved", or says "Needs a closer
+   look" with 0 open findings and no "Previously missed" findings while the
+   local review on the same commit is clean. A vague summary without findings
+   is not a finding. The repository's merge rules still apply, for example a
+   person's explicit permission.
+7. **Never on the default branch.** GitHub reads the whole commit message. Make
    sure no squash message or merge commit that lands on the default branch
    contains `[skip ci]`, or CI on that branch is skipped too.
 
