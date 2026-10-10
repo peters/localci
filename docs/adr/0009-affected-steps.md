@@ -39,8 +39,10 @@ localci leaves out a step only when all these conditions are true:
    `include_str!` reads.
 6. No script that the step calls changed. No file that an earlier step names,
    calls or sources changed, three levels deep.
-7. The step does not install tools or packages, for example with
-   `cargo install`, `npm ci` or `go install`. Later steps can need them.
+7. The step only checks: each tool command is a check such as `cargo test`,
+   `cargo clippy`, `cargo fmt`, `go vet` or `npm test`. A step that builds or
+   installs something, for example `cargo build` or `npm ci`, always runs,
+   because later steps can use its output.
 8. The working directory of the step has no expression, and the step does not
    read `needs` outputs. A local action (`uses: ./...`) before the step did
    not change.

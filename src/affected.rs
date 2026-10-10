@@ -397,6 +397,9 @@ impl Affected {
         if usage.installs {
             return Err("it installs tools or packages that later steps can need".into());
         }
+        if usage.builds {
+            return Err("it builds output that later steps can use".into());
+        }
         if usage.tools.is_empty() {
             return Err(NOT_A_TOOL.into());
         }

@@ -29,7 +29,16 @@ pub struct Usage {
     /// The step installs tools or packages (`cargo install`, `npm ci`, `go install`).
     /// Later steps can need them, so such a step always runs.
     pub installs: bool,
+    /// The step runs a tool command that is not only a check (`cargo build`,
+    /// `npm run build`). Later steps can use its output, so such a step always runs.
+    pub builds: bool,
 }
+
+/// Subcommands (the first plain word) that only check and leave nothing that a later
+/// step uses. Any other subcommand of a tool can make output, for example a binary.
+const CHECKS: &[&str] = &[
+    "test", "clippy", "fmt", "check", "nextest", "vet", "lint", "format", "audit", "deny",
+];
 
 /// Subcommands that install something for later steps.
 const INSTALLS: &[&str] = &["install", "ci", "i", "add", "restore", "get", "fetch"];
@@ -59,6 +68,9 @@ pub fn analyze(script: &str, root: &Path, workdir: &str, depth: usize) -> Result
         writes_step_files: STEP_FILES.iter().any(|f| joined.contains(f)),
         ..Usage::default()
     };
+    // A function that passes `"$@"` to a tool: its callers name the subcommand.
+    let mut forwards = false;
+    let mut calls: Vec<Option<String>> = Vec::new();
     for line in joined.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -84,6 +96,15 @@ pub fn analyze(script: &str, root: &Path, workdir: &str, depth: usize) -> Result
                 };
                 first = body;
             }
+            if functions.iter().any(|f| f == first) {
+                calls.push(
+                    words
+                        .clone()
+                        .find(|w| !w.starts_with('-') && !w.starts_with('+'))
+                        .map(String::from),
+                );
+                continue;
+            }
             if first == "in" || BUILTINS.contains(&first) || functions.iter().any(|f| f == first) {
                 continue;
             }
@@ -98,6 +119,20 @@ pub fn analyze(script: &str, root: &Path, workdir: &str, depth: usize) -> Result
                     .collect();
                 usage.installs |= plain.iter().any(|w| INSTALLS.contains(w))
                     || (first == "yarn" && plain.is_empty());
+                // `npm run lint` checks; `cargo "$@"` takes its subcommand from the caller.
+                let sub = if plain.first() == Some(&"run") {
+                    plain.get(1)
+                } else {
+                    plain.first()
+                }
+                .copied();
+                if sub.is_some_and(|s| s.starts_with("\"$") || s.starts_with('$')) {
+                    forwards = true;
+                } else {
+                    let check = sub.is_some_and(|s| CHECKS.contains(&s))
+                        || (first == "node" && words.clone().any(|w| w == "--test"));
+                    usage.builds |= !check;
+                }
                 continue;
             }
             let path = if matches!(first, "bash" | "sh" | "source" | ".") {
@@ -117,10 +152,16 @@ pub fn analyze(script: &str, root: &Path, workdir: &str, depth: usize) -> Result
             usage.scripts.extend(inner.scripts);
             usage.writes_step_files |= inner.writes_step_files;
             usage.installs |= inner.installs;
+            usage.builds |= inner.builds;
             for tool in inner.tools {
                 add_tool(&mut usage, tool);
             }
         }
+    }
+    if forwards {
+        usage.builds |= calls
+            .iter()
+            .any(|sub| !sub.as_deref().is_some_and(|s| CHECKS.contains(&s)));
     }
     Ok(usage)
 }
@@ -298,6 +339,19 @@ mod tests {
         assert!(!installs("cargo test -p app"));
         assert!(!installs("cargo test --locked"));
         assert!(!installs("npm test"));
+        let builds =
+            |s: &str| analyze(s, Path::new("/nonexistent"), ".", 0).is_ok_and(|u| u.builds);
+        assert!(builds("cargo build --locked -p app"));
+        assert!(builds("npm run build"));
+        assert!(!builds(
+            "cargo test --locked && cargo clippy -- -D warnings && cargo fmt --check"
+        ));
+        assert!(!builds("npm run lint && npm test && go vet ./..."));
+        assert!(!builds("node --test scripts/x.test.cjs"));
+        assert!(!builds(
+            "run() {\n  cargo \"$@\"\n}\nrun test -p a\nrun clippy"
+        ));
+        assert!(builds("run() {\n  cargo \"$@\"\n}\nrun build -p a"));
         assert_eq!(tools("build() { cargo build; }\nbuild"), Some(vec!["Rust"]));
         assert_eq!(
             tools("case \"$x\" in\n  a) python3 y ;;\n  *) cargo test ;;\nesac"),

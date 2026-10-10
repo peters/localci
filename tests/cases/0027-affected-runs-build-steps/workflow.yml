@@ -1,0 +1,13 @@
+on: push
+jobs:
+  build:
+    runs-on: localci-host
+    steps:
+      - name: Tools on PATH
+        run: echo "$PWD/bin" >> "$GITHUB_PATH"
+      - name: Build a binary
+        run: cargo build -p app
+      - name: Use the binary
+        run: test -f out/app
+      - name: Rust tests
+        run: cargo test
