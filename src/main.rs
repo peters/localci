@@ -318,14 +318,22 @@ fn affected_for(
     if !args.affected {
         return Ok(None);
     }
-    let base = match &args.base {
-        Some(reference) => git(root, &["merge-base", "HEAD", reference])
-            .ok_or(format!("--base {reference}: no merge base with HEAD"))?,
-        None => match expr::to_text(&contexts["github"]["event"]["pull_request"]["base"]["sha"]) {
-            sha if !sha.is_empty() => sha,
-            _ => git(root, &["rev-parse", "HEAD~1"])
-                .ok_or("--affected: no base commit; pass --base REF")?,
-        },
+    let _ = contexts;
+    let base = match localci::affected::base_commit(root, args.base.as_deref()) {
+        Some(base) => base,
+        None if args.base.is_some() => {
+            return Err(format!(
+                "--base {}: no merge base with HEAD",
+                args.base.as_deref().unwrap_or_default()
+            ))
+        }
+        None => {
+            let base = git(root, &["rev-parse", "HEAD~1"]).ok_or(
+                "--affected: no origin default branch and no parent commit; pass --base REF",
+            )?;
+            eprintln!("localci: warning: no origin default branch; --affected compares with the parent commit {}", &base[..base.len().min(9)]);
+            base
+        }
     };
     let affected = localci::affected::Affected::new(root, &base, workflow)?;
     eprintln!(
@@ -436,17 +444,19 @@ fn real_main() -> Result<ExitCode, String> {
         eprintln!("localci: warning: {warning}");
     }
     let cache = if args.cache {
-        let cache = localci::cache::Cache::open(&root, &dir);
-        if cache.is_none() {
-            eprintln!("localci: warning: --cache needs a Git repository; running without it");
+        match localci::cache::Cache::open(&root, &dir) {
+            Ok(cache) => Some(cache),
+            Err(why) => {
+                eprintln!("localci: warning: --cache is off: {why}");
+                None
+            }
         }
-        cache
     } else {
         None
     };
     let parallel = match args.parallel {
         None => 1,
-        Some(0) => std::thread::available_parallelism().map_or(1, |n| (n.get() / 8).clamp(1, 4)),
+        Some(0) => std::thread::available_parallelism().map_or(1, |n| (n.get() / 4).clamp(2, 4)),
         Some(n) => n,
     };
     let opts = run::Options {

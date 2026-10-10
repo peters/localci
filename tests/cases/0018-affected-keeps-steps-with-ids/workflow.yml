@@ -1,0 +1,14 @@
+on: push
+jobs:
+  build:
+    runs-on: localci-host
+    steps:
+      - name: Tools on PATH
+        run: echo "$PWD/bin" >> "$GITHUB_PATH"
+      - id: meta
+        name: A tool step with an id
+        run: cargo metadata
+      - name: Reads its output
+        run: test "${{ steps.meta.outputs.value }}" = 42
+      - name: A tool step without an id
+        run: cargo test

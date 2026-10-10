@@ -1,0 +1,17 @@
+on: push
+jobs:
+  matrix:
+    runs-on: localci-host
+    strategy:
+      matrix:
+        leg: [fails, passes-later]
+    steps:
+      - run: |
+          if [ "${{ matrix.leg }}" = fails ]; then exit 1; fi
+          sleep 1
+  after:
+    needs: matrix
+    if: always()
+    runs-on: localci-host
+    steps:
+      - run: test "${{ needs.matrix.result }}" = failure

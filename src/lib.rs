@@ -8,6 +8,7 @@ pub mod plan;
 pub mod process;
 pub mod run;
 pub mod schedule;
+pub mod script;
 pub mod services;
 pub mod shell;
 pub mod skill;

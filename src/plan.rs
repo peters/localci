@@ -185,6 +185,7 @@ pub fn to_json(
                         "leave_out": selection.leaves_out(leg, i + 1, step).map(String::from)
                             .or_else(|| (static_if(leg, step, base) == Some(false)).then(|| "if: false for this leg".to_string()))
                             .or_else(|| affected.and_then(|a| a.leaves_out(leg, i + 1, step))),
+                        "runs_because": affected.and_then(|a| a.decide(leg, i + 1, step).err()),
                     })
                 })
                 .collect();
@@ -239,7 +240,8 @@ pub fn print(
         }
         for (i, step) in leg.job.steps.iter().enumerate() {
             let k = kind(step);
-            let unaffected = affected.and_then(|a| a.leaves_out(leg, i + 1, step));
+            let decision = affected.map(|a| a.decide(leg, i + 1, step));
+            let unaffected = decision.as_ref().and_then(|d| d.as_ref().ok().cloned());
             let status = match selection.leaves_out(leg, i + 1, step) {
                 Some(reason) => format!("skip  ({reason})"),
                 None if static_if(leg, step, base) == Some(false) => {
@@ -248,7 +250,7 @@ pub fn print(
                 None if unaffected.is_some() => {
                     format!("skip  ({})", unaffected.unwrap_or_default())
                 }
-                None => match affected.map(|a| a.decide(leg, i + 1, step)) {
+                None => match decision {
                     Some(Err(why)) if k == Kind::Run && !why.contains("no known build tool") => {
                         format!("run   (runs: {why})")
                     }

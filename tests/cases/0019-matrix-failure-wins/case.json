@@ -1,0 +1,10 @@
+{
+  "description": "needs.<job>.result is failure when any matrix leg failed, also when a later leg passes and legs run in parallel (found in a local review, 2026-10-10).",
+  "args": ["run", "--parallel", "2", "-k", "--json", "-q"],
+  "exit": 1,
+  "expect": {"failed": 1, "legs": [
+    {"key": "matrix#1", "result": "failure"},
+    {"key": "matrix#2", "result": "success"},
+    {"key": "after", "result": "success"}]},
+  "hosts": ["linux", "macos"]
+}

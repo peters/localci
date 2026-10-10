@@ -1,0 +1,8 @@
+{
+  "description": "--affected never leaves out a step with an id, because later steps can read its outputs; a tool step without an id is still left out (found in a local review, 2026-10-10).",
+  "args": ["run", "--affected", "--base", "base", "--json", "-q"],
+  "expect": {"failed": 0, "legs": [{"steps": [
+    {"outcome": "success"}, {"outcome": "success"}, {"outcome": "success"},
+    {"outcome": "skipped", "reason": "~affected: no Rust inputs changed"}]}]},
+  "hosts": ["linux", "macos"]
+}

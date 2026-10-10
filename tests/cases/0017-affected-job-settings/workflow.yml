@@ -1,0 +1,11 @@
+on: push
+jobs:
+  build:
+    runs-on: localci-host
+    env:
+      MODE: one
+    steps:
+      - name: Tools on PATH
+        run: echo "$PWD/bin" >> "$GITHUB_PATH"
+      - name: Rust tests
+        run: cargo test

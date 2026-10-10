@@ -280,6 +280,20 @@ pub(crate) fn run_leg(
                 .run
                 .working_directory
                 .as_deref());
+            let path = format!(
+                "{}:{}",
+                extra_path.join(":"),
+                step_env
+                    .get("PATH")
+                    .map(expr::to_text)
+                    .or_else(|| std::env::var("PATH").ok())
+                    .unwrap_or_default()
+            );
+            let versions = opts
+                .cache
+                .as_ref()
+                .map(|c| c.tool_versions(&script))
+                .unwrap_or_default();
             (
                 crate::cache::Cache::key(
                     &script,
@@ -287,6 +301,8 @@ pub(crate) fn run_leg(
                     workdir,
                     &step_env,
                     opts.host.runner_name(),
+                    &path,
+                    &versions,
                 ),
                 script,
             )

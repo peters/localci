@@ -16,7 +16,9 @@ steps that passed with the same inputs a few minutes before.
   tree object. It uses a temporary index, so the real index does not change.
   The snapshot includes untracked files and ignores the files in `.gitignore`.
 - The key of a record contains the script after expression evaluation, the
-  shell, the working directory, the environment of the step and the system.
+  shell, the working directory, the environment and `PATH` of the step, the
+  system, and the `--version` output of the tools that the step runs. The key
+  uses FNV-1a, a hash that does not change between Rust releases.
 - localci uses a record when the snapshot is the same. For a step with only
   known tool commands (ADR-0009), localci also uses a record when no changed
   file between the two snapshots is an input of its tools.
@@ -29,5 +31,10 @@ The records are in `$XDG_CACHE_HOME/localci`, or in `~/.cache/localci`.
 
 - A step that reads data from outside the checkout, for example from the
   network, can show an old result. Do not use `--cache` for that kind of check.
+- The snapshot puts each untracked file that `.gitignore` does not exclude into
+  `.git/objects`, large or secret files included. Add such files to
+  `.gitignore`, or do not use `--cache`.
+- localci writes each record to a temporary file and then renames it, so a
+  parallel leg never reads half a record.
 - Git keeps the snapshot trees as unreferenced objects. `git gc` removes them
   after the usual expiry time. localci then runs the step again.

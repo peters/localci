@@ -13,8 +13,12 @@ can do more work at the same time.
 
 `localci run --parallel N` runs a maximum of N legs at the same time. A leg
 starts when all picked legs of the jobs in its `needs` are complete.
-`--parallel 0` uses one leg for each eight CPU cores, with a minimum of one and
+`--parallel 0` uses one leg for each four CPU cores, with a minimum of two and
 a maximum of four.
+
+A matrix job counts as failed in `needs` when one of its legs failed, also when
+another leg passes later. If a leg stops with an internal error, it counts as
+failed, and the other legs continue.
 
 With more than one leg, localci does not show the output of the steps. It shows
 the step names and the end of the log of a step that failed.
