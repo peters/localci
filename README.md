@@ -17,7 +17,41 @@ build cache still warm.**
 - **Your OS, your jobs.** It runs the jobs whose `runs-on` matches your machine (Linux, macOS or Windows) and tells you which ones need another OS.
 - **Real steps.** Shell steps, matrices, `needs`, outputs, `GITHUB_ENV`, `if:` conditions and `services:` (as Docker containers) behave like they do on GitHub. Setup actions such as `actions/checkout` are skipped, because your machine already has the checkout and the tools.
 - **Made for agents.** One command teaches Claude Code, Codex and other agents to run the right subset of your CI before they push.
-- **Tiny.** One static binary, about 1 MB to download.
+- **Tiny.** One static binary, about 600 KB to download, installed in under 2 seconds.
+
+## The numbers
+
+Measured on [Horizon](https://github.com/peters/horizon), a public Rust
+workspace with a Linux, macOS and Windows CI matrix, on 10 October 2026.
+
+**Waiting for GitHub vs. checking locally**
+
+| | Time |
+|---|---|
+| One GitHub CI run, push to result (median of 18 runs) | **27 minutes** |
+| Same Linux jobs with `localci run`, one after another | 15 to 23 minutes |
+| Same change with `localci run --fast` | **2 minutes 16 seconds** |
+| `localci run --fast` again, nothing changed | **0 seconds** |
+| A failing CI test, found by `localci run repo-checks` before any push | **4 seconds** |
+
+**What it saves on a pull request.** Without localci, every push starts a full
+CI run of about 62 runner-minutes, and a fix round waits for it. In the last
+40 merged Horizon PRs:
+
+| | Review rounds | CI runs | Runner time |
+|---|---|---|---|
+| Small PRs (5 files or fewer), median | 1 | 1 | 63 min |
+| Large PRs (more than 10 files), median | 5 | 5 | 307 min |
+| Large PR with localci and the skill's PR loop (estimate) | 5 | 2 | about 125 min |
+
+With the PR loop, each fix is checked locally and pushed without a CI run. CI
+runs on the first and the last push only. For a large PR that is about
+**1½ hours less waiting** and **about 3 hours less runner time**.
+
+**A real PR** ([peters/horizon#1461](https://github.com/peters/horizon/pull/1461)):
+localci found 2 failures before the first push. The review approved it
+9 minutes after it opened. It had 4 pushes and 2 CI runs; without localci it
+would have had 4 CI runs.
 
 ## Quick start
 
@@ -92,9 +126,8 @@ localci run --fast
 - `--cache`: reuse a step that already passed on the same inputs, including its outputs.
 - `--parallel 0`: run independent jobs at the same time (2 to 4, from the CPU count).
 
-On [Horizon](https://github.com/peters/horizon), a large public Rust workspace, a documentation and CI change went from a
-23-minute full Linux run to 136 seconds with `--fast`, and to 0 seconds for a
-second run with no changes. `localci plan --affected` shows why each step runs
+On Horizon, a documentation and CI change went from a 23-minute full Linux run
+to 136 seconds with `--fast`, and to 0 seconds for a second run with no changes. `localci plan --affected` shows why each step runs
 or not. Run once without `--fast` before you push for review.
 
 ## Skip things locally, keep them on GitHub

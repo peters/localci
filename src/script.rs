@@ -89,9 +89,15 @@ pub fn analyze(script: &str, root: &Path, workdir: &str, depth: usize) -> Result
             }
             if let Some(tool) = TOOLS.iter().find(|t| t.commands.contains(&first)) {
                 add_tool(&mut usage, tool);
-                let sub = words.clone().find(|w| !w.starts_with('-'));
-                usage.installs |= sub.is_some_and(|s| INSTALLS.contains(&s))
-                    || (first == "yarn" && sub.is_none());
+                // The first two plain words, past `+toolchain` and flags: this finds
+                // `cargo +nightly install`, `dotnet tool install` and `npm --prefix web ci`.
+                let plain: Vec<&str> = words
+                    .clone()
+                    .filter(|w| !w.starts_with('-') && !w.starts_with('+'))
+                    .take(2)
+                    .collect();
+                usage.installs |= plain.iter().any(|w| INSTALLS.contains(w))
+                    || (first == "yarn" && plain.is_empty());
                 continue;
             }
             let path = if matches!(first, "bash" | "sh" | "source" | ".") {
@@ -286,6 +292,10 @@ mod tests {
         assert!(installs("cargo install cargo-nextest --locked"));
         assert!(installs("npm ci"));
         assert!(installs("yarn"));
+        assert!(installs("cargo +nightly install cargo-udeps"));
+        assert!(installs("dotnet tool install -g dotnet-ef"));
+        assert!(installs("npm --prefix web ci"));
+        assert!(!installs("cargo test -p app"));
         assert!(!installs("cargo test --locked"));
         assert!(!installs("npm test"));
         assert_eq!(tools("build() { cargo build; }\nbuild"), Some(vec!["Rust"]));

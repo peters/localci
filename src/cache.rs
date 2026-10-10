@@ -164,6 +164,7 @@ impl Cache {
         let entry: Entry =
             serde_json::from_str(&std::fs::read_to_string(self.file(key)).ok()?).ok()?;
         if entry.tree == self.tree {
+            self.touch(key);
             return Some(entry);
         }
         let diff = git(
@@ -192,7 +193,17 @@ impl Cache {
                 .iter()
                 .all(|tool| !is_input(&self.root, tool, f))
         });
+        if inert {
+            self.touch(key);
+        }
         inert.then_some(entry)
+    }
+
+    /// Marks a record as used, so pruning keeps records that runs still reuse.
+    fn touch(&self, key: &str) {
+        if let Ok(file) = std::fs::File::options().append(true).open(self.file(key)) {
+            let _ = file.set_modified(SystemTime::now());
+        }
     }
 
     pub fn record(&self, key: &str, mut entry: Entry) {
