@@ -26,7 +26,13 @@ pub struct Usage {
     pub tools: Vec<&'static Tool>,
     pub scripts: Vec<String>,
     pub writes_step_files: bool,
+    /// The step installs tools or packages (`cargo install`, `npm ci`, `go install`).
+    /// Later steps can need them, so such a step always runs.
+    pub installs: bool,
 }
+
+/// Subcommands that install something for later steps.
+const INSTALLS: &[&str] = &["install", "ci", "i", "add", "restore", "get", "fetch"];
 
 /// The tools a script uses, or why localci cannot tell: a command that is not a known
 /// tool or builtin, a script outside the repository, or a command substitution.
@@ -83,6 +89,9 @@ pub fn analyze(script: &str, root: &Path, workdir: &str, depth: usize) -> Result
             }
             if let Some(tool) = TOOLS.iter().find(|t| t.commands.contains(&first)) {
                 add_tool(&mut usage, tool);
+                let sub = words.clone().find(|w| !w.starts_with('-'));
+                usage.installs |= sub.is_some_and(|s| INSTALLS.contains(&s))
+                    || (first == "yarn" && sub.is_none());
                 continue;
             }
             let path = if matches!(first, "bash" | "sh" | "source" | ".") {
@@ -101,6 +110,7 @@ pub fn analyze(script: &str, root: &Path, workdir: &str, depth: usize) -> Result
             usage.scripts.push(rel);
             usage.scripts.extend(inner.scripts);
             usage.writes_step_files |= inner.writes_step_files;
+            usage.installs |= inner.installs;
             for tool in inner.tools {
                 add_tool(&mut usage, tool);
             }
@@ -116,6 +126,35 @@ fn add_tool(usage: &mut Usage, tool: &'static Tool) {
 }
 
 /// A script path as a repository path, or `None` when it is not a file in the repository.
+/// Every repository file that `text` names as a word, and the files those files name,
+/// three levels deep. It does not depend on knowing the commands, so it also follows
+/// `source` and arguments of unknown programs.
+pub fn named_files(text: &str, root: &Path, workdir: &str, depth: usize, out: &mut Vec<String>) {
+    if depth > 3 {
+        return;
+    }
+    for line in text.lines() {
+        for word in crate::shell::split(line) {
+            let word = word.trim_matches(|c| matches!(c, ';' | '(' | ')' | '{' | '}'));
+            if word.is_empty() || word.contains("${") || out.iter().any(|o| o == word) {
+                continue;
+            }
+            let Some(rel) = repo_path(root, workdir, word) else {
+                continue;
+            };
+            if out.contains(&rel) {
+                continue;
+            }
+            out.push(rel.clone());
+            if let Ok(inner) = std::fs::read_to_string(root.join(&rel)) {
+                if inner.len() < 1 << 20 {
+                    named_files(&inner, root, workdir, depth + 1, out);
+                }
+            }
+        }
+    }
+}
+
 fn repo_path(root: &Path, workdir: &str, path: &str) -> Option<String> {
     if Path::new(path).is_absolute() {
         return None;
@@ -242,6 +281,13 @@ mod tests {
         );
         assert_eq!(tools("for f in a b; do python3 x.py; done"), None);
         assert_eq!(tools("foo() { python3 gen.py; }; foo; cargo test"), None);
+        let installs =
+            |s: &str| analyze(s, Path::new("/nonexistent"), ".", 0).is_ok_and(|u| u.installs);
+        assert!(installs("cargo install cargo-nextest --locked"));
+        assert!(installs("npm ci"));
+        assert!(installs("yarn"));
+        assert!(!installs("cargo test --locked"));
+        assert!(!installs("npm test"));
         assert_eq!(tools("build() { cargo build; }\nbuild"), Some(vec!["Rust"]));
         assert_eq!(
             tools("case \"$x\" in\n  a) python3 y ;;\n  *) cargo test ;;\nesac"),

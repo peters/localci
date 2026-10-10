@@ -1,0 +1,11 @@
+on: push
+jobs:
+  build:
+    runs-on: localci-host
+    steps:
+      - name: Tools on PATH
+        run: echo "$PWD/bin" >> "$GITHUB_PATH"
+      - name: Install a tool
+        run: cargo install some-tool --locked
+      - name: Rust tests
+        run: cargo test

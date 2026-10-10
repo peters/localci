@@ -315,11 +315,12 @@ pub(crate) fn run_leg(
                     opts.host.runner_name(),
                     &path,
                     &format!(
-                        "{}\n{}\n{}\n{}\n{versions}",
+                        "{}\n{}\n{}\n{}\n{versions}{}",
                         opts.workspace.display(),
                         expr::to_text(&step_contexts["github"]["sha"]),
                         expr::to_text(&step_contexts["github"]["ref"]),
                         expr::to_text(&step_contexts["github"]["event_name"]),
+                        toolchain_env(),
                     ),
                 ),
                 script,
@@ -461,6 +462,42 @@ pub(crate) fn run_leg(
         steps: reports,
     };
     (report, Value::Object(outputs))
+}
+
+/// Variables of the user's shell that change what build tools do. They are part of
+/// the cache key; other variables of the shell are not (ADR-0010).
+fn toolchain_env() -> String {
+    const PREFIXES: &[&str] = &[
+        "RUST",
+        "CARGO",
+        "NODE",
+        "NPM_",
+        "YARN_",
+        "GO",
+        "DOTNET_",
+        "NUGET_",
+        "JAVA_",
+        "GRADLE_",
+        "SWIFT",
+        "DEVELOPER_DIR",
+        "SDKROOT",
+        "CC",
+        "CXX",
+        "CFLAGS",
+        "CXXFLAGS",
+        "CPPFLAGS",
+        "LDFLAGS",
+        "PKG_CONFIG",
+        "LD_LIBRARY_PATH",
+        "DYLD_",
+        "LIBRARY_PATH",
+        "CPATH",
+    ];
+    let mut vars: Vec<(String, String)> = std::env::vars()
+        .filter(|(k, _)| PREFIXES.iter().any(|p| k.starts_with(p)))
+        .collect();
+    vars.sort();
+    vars.iter().map(|(k, v)| format!("\n{k}={v}")).collect()
 }
 
 /// Creates `path` and its missing parents for this user only, as a runner's

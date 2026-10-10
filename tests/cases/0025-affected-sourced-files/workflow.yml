@@ -1,0 +1,11 @@
+on: push
+jobs:
+  build:
+    runs-on: localci-host
+    steps:
+      - name: Tools on PATH
+        run: echo "$PWD/bin" >> "$GITHUB_PATH"
+      - name: Setup that also runs an unknown command
+        run: bash ci/setup.sh
+      - name: Rust tests
+        run: cargo test

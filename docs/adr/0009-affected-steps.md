@@ -37,9 +37,11 @@ localci leaves out a step only when all these conditions are true:
    folder is, for example, a Rust crate with `[package]` in `Cargo.toml`. Tests
    can read any file in it. An example of a named file is a file that
    `include_str!` reads.
-6. No script that the step calls changed. No file that an earlier step names
-   or calls changed.
-7. The working directory of the step has no expression, and the step does not
+6. No script that the step calls changed. No file that an earlier step names,
+   calls or sources changed, three levels deep.
+7. The step does not install tools or packages, for example with
+   `cargo install`, `npm ci` or `go install`. Later steps can need them.
+8. The working directory of the step has no expression, and the step does not
    read `needs` outputs. A local action (`uses: ./...`) before the step did
    not change.
 

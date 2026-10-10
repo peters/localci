@@ -20,7 +20,9 @@ steps that passed with the same inputs a few minutes before.
   - the shell, the environment and the `PATH` of the step;
   - the system and the checkout folder;
   - the commit, the Git reference and the event name;
-  - the version of each tool that the step runs. The key
+  - the version of each tool that the step runs;
+  - the variables of your shell that change build tools, for example
+    `RUSTFLAGS`, `CARGO_*`, `NODE_*`, `GO*`, `CC` and `CFLAGS`. The key
   uses FNV-1a, a hash that does not change between Rust releases.
 - localci uses a record when the snapshot is the same. For a step with only
   known tool commands (ADR-0009), localci also uses a record when no changed
@@ -38,6 +40,8 @@ the user can read them, because they can contain `GITHUB_ENV` values.
   get an old result.
 - localci does not make the files again that a step made the first time, for
   example a build folder. If you delete these files, run without `--cache`.
+- Other variables of your shell are not in the key. If a step reads such a
+  variable, run it without `--cache` after you change the variable.
 - A step that reads data from outside the checkout, for example from the
   network, can show an old result. Do not use `--cache` for that kind of check.
 - The snapshot puts each untracked file that `.gitignore` does not exclude into

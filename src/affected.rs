@@ -329,14 +329,14 @@ impl Affected {
             let Some(text) = earlier.run.as_deref() else {
                 continue;
             };
-            let called = analyze(
+            let mut called = Vec::new();
+            crate::script::named_files(
                 text,
                 &self.root,
                 workdir_of(leg, earlier, self).unwrap_or("."),
                 0,
-            )
-            .map(|u| u.scripts)
-            .unwrap_or_default();
+                &mut called,
+            );
             let named = self
                 .changed
                 .iter()
@@ -359,6 +359,9 @@ impl Affected {
         let usage = analyze(run, &self.root, workdir.unwrap_or("."), 0)?;
         if usage.writes_step_files {
             return Err("it writes a GITHUB_* file that later steps read".into());
+        }
+        if usage.installs {
+            return Err("it installs tools or packages that later steps can need".into());
         }
         if usage.tools.is_empty() {
             return Err(NOT_A_TOOL.into());
