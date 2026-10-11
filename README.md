@@ -22,7 +22,7 @@ build cache still warm.**
 ## The numbers
 
 Measured on [Horizon](https://github.com/peters/horizon), a public Rust
-workspace with a Linux, macOS and Windows CI matrix, on 10 October 2026.
+workspace with a Linux, macOS and Windows CI matrix, on 10 and 11 October 2026.
 
 **Waiting for GitHub vs. checking locally**
 
@@ -33,6 +33,8 @@ workspace with a Linux, macOS and Windows CI matrix, on 10 October 2026.
 | Same change with `localci run --fast` | **2 minutes 16 seconds** |
 | `localci run --fast` again, nothing changed | **0 seconds** |
 | A failing CI test, found by `localci run repo-checks` before any push | **4 seconds** |
+| One code review round with Copilot on the PR, plus a push | about 5 minutes |
+| One local review round (the skill's Copilot CLI prompt), no push | **1 to 4 minutes** |
 
 **What it saves on a pull request.** Without localci, every push starts a full
 CI run of about 62 runner-minutes, and a fix round waits for it. In the last
@@ -42,16 +44,24 @@ CI run of about 62 runner-minutes, and a fix round waits for it. In the last
 |---|---|---|---|
 | Small PRs (5 files or fewer), median | 1 | 1 | 63 min |
 | Large PRs (more than 10 files), median | 5 | 5 | 307 min |
-| Large PR with localci and the skill's PR loop (estimate) | 5 | 2 | about 125 min |
+| Large PR with localci and the skill's PR loop (estimate) | 1 to 2 | 1 to 2 | 60 to 125 min |
 
-With the PR loop, each fix is checked locally and pushed without a CI run. CI
-runs on the first and the last push only. For a large PR that is about
-**1½ hours less waiting** and **about 3 hours less runner time**.
+With the PR loop, you review and test locally until both are clean, and the
+review on GitHub becomes a final check instead of the place where you iterate.
+For a large PR that is about **1½ hours less waiting** and **3 to 4 hours less
+runner time**. The large-PR row is an estimate; the rows below are measured.
 
-**A real PR** ([peters/horizon#1461](https://github.com/peters/horizon/pull/1461)):
-localci found 2 failures before the first push. The review approved it
-9 minutes after it opened. It had 4 pushes and 2 CI runs; without localci it
-would have had 4 CI runs.
+**Real PRs, as the loop improved**
+
+| PR | What was new | Review rounds on GitHub | CI runs | Open to ready |
+|---|---|---|---|---|
+| [#1461](https://github.com/peters/horizon/pull/1461) | localci before each push, fixes pushed without a CI run | 4 (1 with findings) | 2 for 4 pushes | first approval after 9 min |
+| [#1466](https://github.com/peters/horizon/pull/1466) | a general local review before the PR | 5 | 4 started for 5 pushes | 42 min |
+| [#1471](https://github.com/peters/horizon/pull/1471) | a local review that asks for concrete failing inputs, and GitHub's review as the final check | **1** | **1** | **12 min** |
+
+For comparison, the median small Horizon PR before localci took 24 minutes
+from opening to merge, with one review round and one CI run of 63
+runner-minutes.
 
 ## Quick start
 
