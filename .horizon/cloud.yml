@@ -1,0 +1,17 @@
+version: 1
+default: development
+profiles:
+  development:
+    provider: runpod
+    image: ghcr.io/peters/localci-worker
+    build:
+      context: .horizon
+      dockerfile: .horizon/Dockerfile
+      platform: linux/amd64
+    min_cpu: 2
+    min_memory_gb: 4
+    gpu: false
+    capabilities:
+      agents: [codex, claude]
+      browsers: []
+      desktop: false
