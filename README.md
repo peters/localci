@@ -8,6 +8,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT"></a>
 </p>
 
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="localci lists Horizon's CI jobs, catches a formatting slip in 4 seconds, passes after the fix, and reuses the passed steps on a rerun" width="880">
+</p>
+
 Waiting for GitHub to pick up your push, queue a runner and rebuild everything
 from a cold cache is slow. Sometimes GitHub is just down. **localci runs your
 existing `.github/workflows/ci.yml` on your own machine, in seconds, with your
