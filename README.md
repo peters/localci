@@ -122,7 +122,7 @@ localci check                         # can localci handle every workflow here?
 Add `--json -q` for a machine-readable report. Each step's log is kept, and the
 path is printed at the end.
 
-### Fast mode
+### Fast mode (new in 0.1.0)
 
 ```sh
 localci run --fast
