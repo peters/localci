@@ -77,16 +77,18 @@ curl -fsSL https://raw.githubusercontent.com/peters/localci/main/install.sh | sh
 irm https://raw.githubusercontent.com/peters/localci/main/install.ps1 | iex
 ```
 
+Prefer not to pipe a script into your shell? Download a binary from
+[Releases](https://github.com/peters/localci/releases): Linux x64 and arm64
+(static), macOS Apple silicon and Intel, and Windows x64. With Rust installed
+you can also build it yourself in about 10 seconds:
+`cargo install --locked --git https://github.com/peters/localci`.
+
 Then, in any repository with GitHub Actions:
 
 ```sh
 localci list     # every job and matrix leg, and which run here
 localci run      # run them
 ```
-
-Prebuilt binaries cover Linux x64 and arm64 (static), macOS Apple silicon and
-Intel, and Windows x64. With Rust installed you can also build it yourself in
-about 10 seconds: `cargo install --locked --git https://github.com/peters/localci`.
 
 ## Onboard your agent
 
@@ -165,11 +167,41 @@ with their health checks and port mappings, removed when the job ends. If you
 already run those services yourself, add `--no-services`. Set
 `LOCALCI_DOCKER=podman` to use Podman.
 
-## What it does not do
+## How it compares
 
-- Run jobs for another OS. Run localci on that machine instead.
-- Run `uses:` actions, reusable workflows or `container:` jobs.
-- Post results to GitHub. GitHub CI stays the final word.
+[act](https://github.com/nektos/act) is the well-known tool for this, and
+[wrkflw](https://github.com/bahdotsh/wrkflw) is a newer one. Both try to
+reproduce a GitHub runner: by default they run each job in a container, and
+they run `uses:` actions. That is the right choice when you want to test the
+workflow itself.
+
+localci answers a different question: "will my change pass CI?" So it makes
+the opposite choices:
+
+| | act / wrkflw (default) | localci |
+|---|---|---|
+| Where steps run | A container that imitates the runner image | Your machine, in your checkout |
+| Build cache | Usually cold: ignored build output stays outside the container | Your warm `target/`, `node_modules/` and so on |
+| `uses:` actions | Runs them | Skips them; your machine has the tools already |
+| Unchanged steps | Run again | `--fast` leaves them out or reuses the result |
+| Agents | Not a focus | A plan as JSON, a skill, and failing-step logs only |
+
+act can also run directly on the host (`-P ubuntu-latest=-self-hosted`). The
+difference that remains is what localci leaves out, and that it is built to be
+driven by an agent.
+
+## When localci is not a good fit
+
+- **Your CI is mostly marketplace actions.** If the real work happens in
+  `uses:` steps (for example `docker/build-push-action` or a deploy action),
+  localci skips it. Use act, or GitHub.
+- **You need the exact runner image.** localci uses your tools and versions. A
+  step can pass here and fail on GitHub because a tool differs.
+- **Jobs for another OS.** It runs only the jobs that match your machine. Run
+  it on that machine instead.
+- **Reusable workflows and `container:` jobs.** It does not run them.
+- **Results on GitHub.** It does not post checks or statuses. GitHub CI stays
+  the final word.
 
 The [compatibility table](docs/compatibility.md) lists every feature, and the
 [decision records](docs/adr/README.md) explain why.
