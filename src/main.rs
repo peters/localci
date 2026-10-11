@@ -338,11 +338,20 @@ fn affected_for(
     };
     let affected = localci::affected::Affected::new(root, &base, workflow)?;
     eprintln!(
-        "localci: --affected: {} changed files since {}",
-        affected.changed().len(),
+        "localci: --affected: {} since {}",
+        count(affected.changed().len(), "changed file"),
         &base[..base.len().min(9)]
     );
     Ok(Some(affected))
+}
+
+/// `1 leg`, `2 legs`.
+fn count(n: usize, noun: &str) -> String {
+    if n == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{n} {noun}s")
+    }
 }
 
 fn main() -> ExitCode {
@@ -478,8 +487,8 @@ fn real_main() -> Result<ExitCode, String> {
     let _ = std::fs::write(dir.join("report.json"), &text);
 
     eprintln!(
-        "\nlocalci: {} legs in {:.0}s · logs {}",
-        reports.len(),
+        "\nlocalci: {} in {:.0}s · logs {}",
+        count(reports.len(), "leg"),
         started.elapsed().as_secs_f64(),
         dir.display()
     );
