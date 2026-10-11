@@ -4,6 +4,15 @@ on:
     branches: [main]
   pull_request:
 jobs:
+  worker-pins:
+    name: Worker pins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify worker pins
+        run: python3 .horizon/verify-pins.py
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

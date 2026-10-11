@@ -1,6 +1,6 @@
 # CI uses the hosted Ubuntu runner's Rust, with no repository version override.
 # Source: actions/runner-images, images/ubuntu/Ubuntu2404-Readme.md.
-FROM ghcr.io/peters/horizon-worker-base@sha256:9f233978dedd3d99214990ff8346e9539d4c127d5e827c74488e21346823b8f2
+FROM ghcr.io/peters/horizon-worker-base@sha256:5d831ab73cc11575080ededaca851480fc9539c13916fd9c19e36903962526d8
 
 USER root
 
@@ -23,7 +23,7 @@ RUN curl -fsSL "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x8
     && chmod -R a+rX /opt/rust \
     && rm /tmp/rustup-init
 
-# Latest published release, including prereleases, resolved at setup time.
+# Latest published release, resolved at setup time; see Cargo.toml package.version.
 ARG LOCALCI_VERSION=0.1.0
 ARG LOCALCI_SHA256=215096651a2af9b1a8d64825d6453b7e090049078ac30525074e9e1f43fdc893
 RUN mkdir -p /tmp/localci-install \

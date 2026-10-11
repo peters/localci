@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "pins": [
+    {
+      "arg": "LOCALCI_VERSION",
+      "file": "Cargo.toml",
+      "toml": "package.version"
+    }
+  ]
+}
