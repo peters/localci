@@ -217,19 +217,38 @@ pub(crate) fn run_leg(
         };
         contexts.insert("steps".into(), Value::Object(steps_ctx.clone()));
         contexts.insert("env".into(), Value::Object(env.clone()));
-        if let (Some(dir), Some(uses)) = (&opts.toolchains, &step.uses) {
+        // With --toolchains, a setup step makes its toolchain active (ADR-0012). It
+        // follows its `if:` and --skip; --only keeps it, because later steps need it.
+        if let (Some(dir), Some(uses), false) =
+            (&opts.toolchains, &step.uses, sel.skips(leg, index, step))
+        {
             if crate::toolchain::is_setup_action(uses) {
-                match crate::setup::activate_step(leg, index, &opts.workspace, &contexts, dir) {
-                    Ok((activations, said)) => {
-                        for a in activations {
-                            let paths = a.paths.iter().map(|p| p.display().to_string());
-                            extra_path.splice(0..0, paths);
-                            env.extend(a.env.into_iter().map(|(k, v)| (k, Value::String(v))));
+                let cond = step.condition.as_ref().map(yaml_text).unwrap_or_default();
+                let ctx = Ctx {
+                    contexts: &contexts,
+                    status,
+                };
+                match expr::condition(&cond, &ctx) {
+                    Ok(true) => match crate::setup::activate_step(
+                        leg,
+                        index,
+                        &opts.workspace,
+                        &contexts,
+                        dir,
+                    ) {
+                        Ok((activations, said)) => {
+                            for a in activations {
+                                extra_path
+                                    .splice(0..0, a.paths.iter().map(|p| p.display().to_string()));
+                                env.extend(a.env.into_iter().map(|(k, v)| (k, Value::String(v))));
+                            }
+                            report.outcome = "success";
+                            report.reason = Some(said);
                         }
-                        report.outcome = "success";
-                        report.reason = Some(said);
-                    }
-                    Err(why) => report.reason = Some(why),
+                        Err(why) => report.reason = Some(why),
+                    },
+                    Ok(false) => report.reason = Some(format!("if: {cond}")),
+                    Err(e) => report.reason = Some(format!("cannot evaluate if: {e}")),
                 }
                 let text = report.reason.as_deref().unwrap_or_default();
                 eprintln!("── {} · {index}/{total} {label}: {text}", leg.name);

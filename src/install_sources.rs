@@ -1,7 +1,9 @@
 //! The official sources of each toolchain and how a request becomes one version
 //! (ADR-0012). The pick functions take parsed metadata, so tests need no network.
 
-use crate::install::{fetch, fetch_json, verify, Activation, Installed, Platform, Sum};
+use crate::install::{
+    fetch, fetch_json, safe_name, unique, verify, Activation, Installed, Platform, Sum,
+};
 use crate::toolchain::Need;
 use serde_json::Value;
 use std::{fs, path::Path, process::Command};
@@ -25,7 +27,8 @@ fn numbers(v: &str) -> Vec<u64> {
 /// of a major `8`, `8.x`.
 pub fn dotnet_channel(request: &str, index: &Value) -> Result<(String, String), String> {
     let r = request.trim().trim_start_matches('v').to_ascii_lowercase();
-    let parts: Vec<&str> = r.split('.').collect();
+    // A prerelease such as 8.0.100-rc.1 is one exact SDK of its channel.
+    let parts: Vec<&str> = r.split('-').next().unwrap_or_default().split('.').collect();
     let channels = index["releases-index"]
         .as_array()
         .cloned()
@@ -53,7 +56,7 @@ pub fn dotnet_channel(request: &str, index: &Value) -> Result<(String, String), 
         }
         [major, minor, patch] => {
             let ch = format!("{major}.{minor}");
-            if let Some(band) = patch.strip_suffix("xx") {
+            if let (Some(band), false) = (patch.strip_suffix("xx"), r.contains('-')) {
                 return Ok((channel_url(&ch)?, format!("band:{major}.{minor}.{band}")));
             }
             Ok((channel_url(&ch)?, format!("exact:{r}")))
@@ -193,33 +196,37 @@ fn triple(p: &Platform) -> String {
 pub fn rust(need: &Need, dir: &Path, workspace: &Path) -> Result<Installed, String> {
     let p = crate::install::platform()?;
     let triple = triple(&p);
+    let request = safe_name(&need.request)?;
+    for name in need.components.iter().chain(&need.targets) {
+        safe_name(name)?;
+    }
     let home = dir.join("rust");
-    let rustup = home.join("cargo/bin/rustup");
+    let bin = home.join("cargo/bin");
     let env = [
         ("RUSTUP_HOME", home.join("rustup")),
         ("CARGO_HOME", home.join("cargo")),
     ];
-    if !rustup.is_file() {
+    // rustup-init copies itself and then makes the proxies: all of them mark a
+    // complete rustup, so a stopped init runs again.
+    if !["rustup", "cargo", "rustc"]
+        .iter()
+        .all(|b| bin.join(b).is_file())
+    {
         fs::create_dir_all(&home).map_err(|e| format!("{}: {e}", home.display()))?;
-        // rustup-init reads its role from its file name, so the name must stay.
-        let init_dir = home.join(format!(".rustup-init-{}", std::process::id()));
-        fs::create_dir_all(&init_dir).map_err(|e| format!("{}: {e}", init_dir.display()))?;
-        let init = init_dir.join("rustup-init");
         let url = format!("{RUSTUP_DIST}/{triple}/rustup-init");
-        fs::write(&init, fetch(&url)?).map_err(|e| e.to_string())?;
+        let bytes = fetch(&url)?;
         let sum = String::from_utf8_lossy(&fetch(&format!("{url}.sha256"))?).into_owned();
-        let checked = verify(
-            &init,
+        verify(
+            &bytes,
             Sum::Sha256,
             sum.split_whitespace().next().unwrap_or_default(),
-        )
-        .and_then(|_| {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                fs::set_permissions(&init, fs::Permissions::from_mode(0o755))
-                    .map_err(|e| e.to_string())?;
-            }
+            &url,
+        )?;
+        // rustup-init reads its role from its file name, so the name must stay.
+        let init_dir = home.join(format!(".rustup-init-{}", unique()));
+        fs::create_dir(&init_dir).map_err(|e| format!("{}: {e}", init_dir.display()))?;
+        let init = init_dir.join("rustup-init");
+        let ran = write_executable(&init, &bytes).and_then(|_| {
             let status = Command::new(&init)
                 .args([
                     "-y",
@@ -239,17 +246,11 @@ pub fn rust(need: &Need, dir: &Path, workspace: &Path) -> Result<Installed, Stri
             }
         });
         let _ = fs::remove_dir_all(&init_dir);
-        checked?;
+        ran?;
     }
-    let installed = toolchain_dir(dir, &need.request, &triple).is_dir();
-    let mut cmd = Command::new(&rustup);
-    cmd.args([
-        "toolchain",
-        "install",
-        &need.request,
-        "--profile",
-        "minimal",
-    ]);
+    let installed = rust_activation(need, dir, workspace).is_some();
+    let mut cmd = Command::new(bin.join("rustup"));
+    cmd.args(["toolchain", "install", request, "--profile", "minimal"]);
     for c in &need.components {
         cmd.args(["--component", c]);
     }
@@ -261,14 +262,25 @@ pub fn rust(need: &Need, dir: &Path, workspace: &Path) -> Result<Installed, Stri
         .status()
         .map_err(|e| format!("rustup: {e}"))?;
     if !status.success() {
-        return Err(format!("rustup could not install {}", need.request));
+        return Err(format!("rustup could not install {request}"));
     }
-    let version = rust_activation(need, dir, workspace).map_or(need.request.clone(), |a| a.version);
+    let version = rust_activation(need, dir, workspace).map_or(request.to_string(), |a| a.version);
     Ok(Installed {
         version,
-        path: toolchain_dir(dir, &need.request, &triple),
+        path: toolchain_dir(dir, request, &triple),
         fresh: !installed,
     })
+}
+
+fn write_executable(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o755);
+    let mut file = options
+        .open(path)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    std::io::Write::write_all(&mut file, bytes).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 fn toolchain_dir(dir: &Path, request: &str, triple: &str) -> std::path::PathBuf {
@@ -280,32 +292,49 @@ fn toolchain_dir(dir: &Path, request: &str, triple: &str) -> std::path::PathBuf 
     dir.join("rust/rustup/toolchains").join(name)
 }
 
+/// The version in the channel manifest that rustup writes at the end of an install,
+/// for example `1.82.0`. Read from the file, so a plan runs nothing.
+fn manifest_version(toolchain: &Path) -> Option<String> {
+    let text =
+        fs::read_to_string(toolchain.join("lib/rustlib/multirust-channel-manifest.toml")).ok()?;
+    let mut in_rustc = false;
+    for line in text.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_rustc = line == "[pkg.rustc]";
+        } else if let (true, Some(v)) = (in_rustc, line.strip_prefix("version = ")) {
+            return v
+                .trim_matches('"')
+                .split_whitespace()
+                .next()
+                .map(String::from);
+        }
+    }
+    None
+}
+
 /// The rustup proxies on `PATH`, `RUSTUP_HOME`, and `RUSTUP_TOOLCHAIN` unless the
 /// repository has a toolchain file, which wins on GitHub too. `CARGO_HOME` stays the
 /// user's, so the registry cache stays writable when the toolchains folder is not.
+/// `None` until the toolchain and each requested component are complete.
 pub fn rust_activation(need: &Need, dir: &Path, workspace: &Path) -> Option<Activation> {
     let p = crate::install::platform().ok()?;
-    let tc = toolchain_dir(dir, &need.request, &triple(&p));
-    if !tc.join("bin").is_dir() {
+    let triple = triple(&p);
+    let tc = toolchain_dir(dir, safe_name(&need.request).ok()?, &triple);
+    let version = manifest_version(&tc)?;
+    let components = fs::read_to_string(tc.join("lib/rustlib/components")).unwrap_or_default();
+    let has = |c: &String| {
+        components.lines().any(|l| {
+            l == format!("{c}-{triple}") || l.starts_with(&format!("{c}-preview-")) || l == c
+        })
+    };
+    if !tc.join("bin/rustc").is_file() || !need.components.iter().all(has) {
         return None;
     }
-    let rustc = tc.join("bin/rustc");
-    let version = Command::new(&rustc)
-        .arg("--version")
-        .output()
-        .ok()
-        .and_then(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .split_whitespace()
-                .nth(1)
-                .map(String::from)
-        })
-        .unwrap_or_else(|| need.request.clone());
     let mut env = vec![(
         "RUSTUP_HOME".to_string(),
         dir.join("rust/rustup").display().to_string(),
     )];
-    let has_file = ["rust-toolchain.toml", "rust-toolchain"]
+    let has_file = ["rust-toolchain", "rust-toolchain.toml"]
         .iter()
         .any(|f| workspace.join(f).is_file());
     if !has_file {
@@ -343,6 +372,10 @@ mod tests {
             ("u10".into(), "latest:10.0".into())
         );
         assert!(dotnet_channel("7.0", &index()).is_err());
+        assert_eq!(
+            dotnet_channel("8.0.100-rc.1", &index()).unwrap().1,
+            "exact:8.0.100-rc.1"
+        );
         let file = |v: &str| {
             json!({"version": v, "files": [
             {"name": "dotnet-sdk-linux-x64.tar.gz", "rid": "linux-x64", "url": format!("https://x/{v}"), "hash": "h"},

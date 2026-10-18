@@ -75,6 +75,9 @@ pub struct Need {
     pub targets: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Variables that the action sets for later steps, for example `RUSTFLAGS`.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
 }
 
 /// The action name without the owner's version ref, in lower case.
@@ -194,6 +197,7 @@ pub fn needs_for(
             components: Vec::new(),
             targets: Vec::new(),
             note: None,
+            env: BTreeMap::new(),
         };
         let found = match tool_of(uses) {
             None => vec![Need {

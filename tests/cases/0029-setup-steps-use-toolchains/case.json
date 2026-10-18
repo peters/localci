@@ -1,5 +1,5 @@
 {
-  "description": "With --toolchains, a setup step puts the installed toolchain on PATH, a step with no version says why it does nothing, and a missing toolchain is named.",
+  "description": "With --toolchains, a setup step puts the installed toolchain on PATH, a step with no version says why it does nothing, and a missing toolchain is named, with the folder as an absolute path. A setup step follows its if:.",
   "args": [
     "run",
     "--toolchains",
@@ -16,11 +16,15 @@
         "steps": [
           {
             "outcome": "success",
-            "reason": "~toolchain: Node.js 20.11.1 from ../0029-toolchains"
+            "reason": "~toolchain: Node.js 20.11.1 from /"
           },
           {
             "outcome": "success",
             "reason": "~the runner's SDK is used"
+          },
+          {
+            "outcome": "skipped",
+            "reason": "if: ${{ github.event_name == 'release' }}"
           },
           {
             "outcome": "success"
@@ -33,7 +37,7 @@
         "steps": [
           {
             "outcome": "skipped",
-            "reason": "~Node.js 22.0.0 is not in ../0029-toolchains (run `localci setup`)"
+            "reason": "~0029-toolchains (run `localci setup`)"
           },
           {
             "outcome": "success"

@@ -1,29 +1,50 @@
 //! Installs the toolchains of the plan from their official sources (ADR-0012).
 //!
-//! Each download is checked against the checksum that its source publishes. A
-//! mismatch stops the install. Nothing runs with sudo, and nothing outside the
-//! toolchains folder changes.
+//! Each download is checked against the checksum that its source publishes, in
+//! memory, and the same bytes are unpacked. A mismatch stops the install. Nothing
+//! runs with sudo, and nothing outside the toolchains folder changes.
 
 use crate::toolchain::{Need, Tool};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256, Sha512};
 use std::{
     fs,
+    io::Write,
     path::{Path, PathBuf},
-    process::Command,
-    time::{Duration, Instant},
+    process::{Command, Stdio},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 /// `LOCALCI_TOOLCHAINS`, else `$XDG_CACHE_HOME/localci/toolchains`, else
-/// `~/.cache/localci/toolchains`.
+/// `~/.cache/localci/toolchains`. Empty variables do not count.
 pub fn default_dir() -> Option<PathBuf> {
-    if let Some(dir) = std::env::var_os("LOCALCI_TOOLCHAINS").filter(|d| !d.is_empty()) {
+    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
+    if let Some(dir) = var("LOCALCI_TOOLCHAINS") {
         return Some(PathBuf::from(dir));
     }
-    std::env::var_os("XDG_CACHE_HOME")
+    var("XDG_CACHE_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
+        .or_else(|| var("HOME").map(|h| PathBuf::from(h).join(".cache")))
         .map(|base| base.join("localci").join("toolchains"))
+}
+
+/// `name` is safe as one folder name: letters, digits, `.`, `_`, `+` and `-`, a
+/// letter or digit first, and no `..`. A version or toolchain name becomes a path,
+/// so a workflow cannot point outside the toolchains folder.
+pub fn safe_name(name: &str) -> Result<&str, String> {
+    let ok = !name.contains("..")
+        && name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._+-".contains(c));
+    if ok {
+        Ok(name)
+    } else {
+        Err(format!("`{name}` is not a valid version or toolchain name"))
+    }
 }
 
 /// The checksum algorithm that a source publishes.
@@ -41,14 +62,12 @@ pub fn hex_digest(bytes: &[u8], sum: Sum) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Refuses a file whose checksum is not `expected` (hex, any case).
-pub fn verify(path: &Path, sum: Sum, expected: &str) -> Result<(), String> {
-    let bytes = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let actual = hex_digest(&bytes, sum);
+/// Refuses `bytes` when their checksum is not `expected` (hex, any case).
+pub fn verify(bytes: &[u8], sum: Sum, expected: &str, what: &str) -> Result<(), String> {
+    let actual = hex_digest(bytes, sum);
     if expected.trim().is_empty() || !actual.eq_ignore_ascii_case(expected.trim()) {
         return Err(format!(
-            "checksum mismatch for {}: expected {}, got {actual}; the file is not used",
-            path.display(),
+            "checksum mismatch for {what}: expected {}, got {actual}; the download is not used",
             expected.trim()
         ));
     }
@@ -82,14 +101,9 @@ pub fn fetch_json(url: &str) -> Result<Value, String> {
     serde_json::from_slice(&fetch(url)?).map_err(|e| format!("{url}: {e}"))
 }
 
-fn download(url: &str, dest: &Path) -> Result<(), String> {
-    let bytes = fetch(url)?;
-    fs::write(dest, bytes).map_err(|e| format!("{}: {e}", dest.display()))
-}
-
 /// The host as the download names use it.
 pub struct Platform {
-    /// `linux`, `osx` (.NET) and `darwin` (Node) differ, so both are kept.
+    /// `linux` or `darwin`. The .NET names use `osx` for `darwin`.
     pub os: &'static str,
     pub arch: &'static str,
 }
@@ -112,49 +126,43 @@ pub fn platform() -> Result<Platform, String> {
     Ok(Platform { os, arch })
 }
 
-/// One folder lock for the toolchains folder, so two setups do not install at once.
-pub struct Lock(PathBuf);
+/// A unique name part for temporary files and folders of this process.
+pub fn unique() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    format!("{}-{nanos}", std::process::id())
+}
+
+/// The lock of the toolchains folder: an OS file lock on `.lock`. A second setup
+/// waits. A setup that stops, also with Ctrl-C or a kill, releases it.
+pub struct Lock {
+    _file: fs::File,
+}
 
 impl Lock {
     pub fn take(dir: &Path) -> Result<Lock, String> {
         fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         let path = dir.join(".lock");
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&path)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
         let started = Instant::now();
         loop {
-            match fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&path)
-            {
-                Ok(_) => {
-                    let _ = fs::write(&path, std::process::id().to_string());
-                    return Ok(Lock(path));
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                    // A lock older than one hour belongs to a setup that stopped.
-                    let stale = fs::metadata(&path)
-                        .and_then(|m| m.modified())
-                        .ok()
-                        .and_then(|t| t.elapsed().ok())
-                        .is_some_and(|age| age > Duration::from_secs(3600));
-                    if stale {
-                        let _ = fs::remove_file(&path);
-                        continue;
-                    }
+            match file.try_lock() {
+                Ok(()) => return Ok(Lock { _file: file }),
+                Err(fs::TryLockError::WouldBlock) => {
                     if started.elapsed() > Duration::from_secs(1800) {
                         return Err(format!("{} is held by another setup", path.display()));
                     }
                     std::thread::sleep(Duration::from_millis(500));
                 }
-                Err(e) => return Err(format!("{}: {e}", path.display())),
+                Err(fs::TryLockError::Error(e)) => return Err(format!("{}: {e}", path.display())),
             }
         }
-    }
-}
-
-impl Drop for Lock {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
     }
 }
 
@@ -163,22 +171,22 @@ impl Drop for Lock {
 pub fn remembered(dir: &Path, tool: Tool, request: &str) -> Option<String> {
     let text = fs::read_to_string(dir.join("requests.json")).ok()?;
     let json: Value = serde_json::from_str(&text).ok()?;
-    json[format!("{} {request}", tool.as_str())]
-        .as_str()
-        .map(String::from)
+    let version = json[format!("{} {request}", tool.as_str())].as_str()?;
+    safe_name(version).ok().map(String::from)
 }
 
 fn remember(dir: &Path, tool: Tool, request: &str, version: &str) -> Result<(), String> {
     let path = dir.join("requests.json");
-    let mut json: Map<String, Value> = fs::read_to_string(&path)
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_default();
+    let mut json: Map<String, Value> = match fs::read_to_string(&path) {
+        Ok(text) => serde_json::from_str(&text)
+            .map_err(|e| format!("{}: {e}; fix or delete it", path.display()))?,
+        Err(_) => Map::new(),
+    };
     json.insert(
         format!("{} {request}", tool.as_str()),
         Value::String(version.into()),
     );
-    let tmp = dir.join(format!(".requests-{}.json", std::process::id()));
+    let tmp = dir.join(format!(".requests-{}.json", unique()));
     fs::write(
         &tmp,
         serde_json::to_string_pretty(&json).unwrap_or_default(),
@@ -187,28 +195,41 @@ fn remember(dir: &Path, tool: Tool, request: &str, version: &str) -> Result<(), 
     .map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// Unpacks `archive` into `final_dir` through a temporary folder and a rename, so a
-/// stopped setup never leaves a half folder that a run would use.
-fn unpack(archive: &Path, final_dir: &Path, strip: bool) -> Result<(), String> {
+/// Unpacks gzip tar `bytes` into `final_dir` through a new temporary folder and a
+/// rename, so a stopped setup never leaves a half folder that a run would use.
+fn unpack(bytes: &[u8], final_dir: &Path, strip: bool) -> Result<(), String> {
     let parent = final_dir.parent().ok_or("no parent folder")?;
-    let tmp = parent.join(format!(
-        ".tmp-{}-{}",
-        final_dir.file_name().unwrap_or_default().to_string_lossy(),
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&tmp);
-    fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
+    let tmp = parent.join(format!(".tmp-{}", unique()));
+    fs::create_dir(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
     let mut tar = Command::new("tar");
-    tar.arg("-xzf").arg(archive).arg("-C").arg(&tmp);
+    tar.args(["-xzf", "-", "-C"])
+        .arg(&tmp)
+        .stdin(Stdio::piped());
     if strip {
         tar.arg("--strip-components=1");
     }
-    let status = tar.status().map_err(|e| format!("tar: {e}"))?;
-    if !status.success() {
+    let result = tar
+        .spawn()
+        .map_err(|e| format!("tar: {e}"))
+        .and_then(|mut child| {
+            let fed = child.stdin.take().map(|mut stdin| stdin.write_all(bytes));
+            let status = child.wait().map_err(|e| format!("tar: {e}"))?;
+            if let Some(Err(e)) = fed {
+                return Err(format!("tar: {e}"));
+            }
+            if status.success() {
+                Ok(())
+            } else {
+                Err(format!("tar could not unpack {}", final_dir.display()))
+            }
+        })
+        .and_then(|_| {
+            fs::rename(&tmp, final_dir).map_err(|e| format!("{}: {e}", final_dir.display()))
+        });
+    if result.is_err() {
         let _ = fs::remove_dir_all(&tmp);
-        return Err(format!("tar could not unpack {}", archive.display()));
     }
-    fs::rename(&tmp, final_dir).map_err(|e| format!("{}: {e}", final_dir.display()))
+    result
 }
 
 /// What `setup` did for one need.
@@ -228,6 +249,7 @@ pub fn install(need: &Need, dir: &Path, workspace: &Path) -> Result<Installed, S
     match tool {
         Tool::Dotnet => {
             let (version, url, hash) = crate::install_sources::dotnet(&need.request, &platform)?;
+            safe_name(&version)?;
             let fresh = dotnet_side_by_side(dir, &version, &url, &hash)?;
             remember(dir, tool, &need.request, &version)?;
             Ok(Installed {
@@ -238,7 +260,7 @@ pub fn install(need: &Need, dir: &Path, workspace: &Path) -> Result<Installed, S
         }
         Tool::Node => {
             let (version, url, hash) = crate::install_sources::node(&need.request, &platform)?;
-            let target = dir.join("node").join(&version);
+            let target = dir.join("node").join(safe_name(&version)?);
             let fresh = archive(&target, &url, Sum::Sha256, &hash, true)?;
             remember(dir, tool, &need.request, &version)?;
             Ok(Installed {
@@ -263,26 +285,23 @@ fn archive(target: &Path, url: &str, sum: Sum, hash: &str, strip: bool) -> Resul
     }
     let parent = target.parent().ok_or("no parent folder")?;
     fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
-    let file = parent.join(format!(".download-{}", std::process::id()));
-    let result = download(url, &file)
-        .and_then(|_| verify(&file, sum, hash))
-        .and_then(|_| unpack(&file, target, strip));
-    let _ = fs::remove_file(&file);
-    result.map(|_| true)
+    let bytes = fetch(url)?;
+    verify(&bytes, sum, hash, url)?;
+    unpack(&bytes, target, strip)?;
+    Ok(true)
 }
 
 /// Installs one .NET SDK into the shared root `<dir>/dotnet`, as the official
-/// install script does: versioned folders (`sdk/<v>`, `shared/<fx>/<v>`,
-/// `host/fxr/<v>`) go next to the others, and the top-level `dotnet` host is
-/// replaced only by a newer SDK. `.versions/<v>` marks a complete install.
+/// install script and setup-dotnet do: versioned folders (`sdk/<v>`,
+/// `shared/<fx>/<v>`, `host/fxr/<v>`) go next to the others, and only a newer SDK
+/// replaces the top-level `dotnet` host. `.versions/<v>` marks a complete install.
 fn dotnet_side_by_side(dir: &Path, version: &str, url: &str, hash: &str) -> Result<bool, String> {
     let root = dir.join("dotnet");
     let marker = root.join(".versions").join(version);
     if marker.is_file() {
         return Ok(false);
     }
-    let unpacked = dir.join(format!(".unpacked-dotnet-{version}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&unpacked);
+    let unpacked = dir.join(format!(".unpacked-{}", unique()));
     archive(&unpacked, url, Sum::Sha512, hash, false)?;
     let newest = fs::read_dir(root.join(".versions"))
         .map(|rd| {
@@ -290,18 +309,26 @@ fn dotnet_side_by_side(dir: &Path, version: &str, url: &str, hash: &str) -> Resu
                 .all(|e| version_key(version) >= version_key(&e.file_name().to_string_lossy()))
         })
         .unwrap_or(true);
-    fs::create_dir_all(root.join(".versions")).map_err(|e| format!("{}: {e}", root.display()))?;
-    let merged = merge(&unpacked, &root, newest);
+    let merged = fs::create_dir_all(root.join(".versions"))
+        .map_err(|e| format!("{}: {e}", root.display()))
+        .and_then(|_| merge(&unpacked, &root, newest));
     let _ = fs::remove_dir_all(&unpacked);
     merged?;
     fs::write(&marker, version).map_err(|e| format!("{}: {e}", marker.display()))?;
     Ok(true)
 }
 
-fn version_key(v: &str) -> Vec<u64> {
-    v.split(['.', '-'])
-        .map(|p| p.parse().unwrap_or(0))
-        .collect()
+/// Numeric parts, then 1 for a release and 0 for a prerelease, so `10.0.100` ranks
+/// above `10.0.100-rc.1`.
+fn version_key(v: &str) -> (Vec<u64>, u8) {
+    let (base, release) = match v.split_once('-') {
+        Some((base, _)) => (base, 0),
+        None => (v, 1),
+    };
+    (
+        base.split('.').map(|p| p.parse().unwrap_or(0)).collect(),
+        release,
+    )
 }
 
 /// Moves what `dst` does not have from `src` into `dst`. A file that both have
@@ -344,10 +371,10 @@ pub fn locate(need: &Need, dir: &Path, workspace: &Path) -> Result<Activation, S
             dir.display()
         )
     };
-    match tool {
+    let mut activation = match tool {
         Tool::Dotnet | Tool::Node => {
             let version = if need.exact {
-                need.request.trim_start_matches('v').to_string()
+                safe_name(need.request.trim_start_matches('v'))?.to_string()
             } else {
                 remembered(dir, tool, &need.request).ok_or_else(not_there)?
             };
@@ -359,23 +386,27 @@ pub fn locate(need: &Need, dir: &Path, workspace: &Path) -> Result<Activation, S
                 (root, env, there)
             } else {
                 let bin = dir.join("node").join(&version).join("bin");
-                let there = bin.is_dir();
+                let there = bin.join("node").is_file();
                 (bin, vec![], there)
             };
             if !there {
                 return Err(not_there());
             }
-            Ok(Activation {
+            Activation {
                 version,
                 paths: vec![bin],
                 env,
-            })
+            }
         }
         Tool::Rust => {
-            crate::install_sources::rust_activation(need, dir, workspace).ok_or_else(not_there)
+            crate::install_sources::rust_activation(need, dir, workspace).ok_or_else(not_there)?
         }
-        other => Err(format!("{} is in the plan only", other.title())),
-    }
+        other => return Err(format!("{} is in the plan only", other.title())),
+    };
+    activation
+        .env
+        .extend(need.env.iter().map(|(k, v)| (k.clone(), v.clone())));
+    Ok(activation)
 }
 
 #[cfg(test)]
@@ -384,23 +415,46 @@ mod tests {
 
     #[test]
     fn verify_refuses_a_wrong_checksum() {
-        let dir = std::env::temp_dir().join(format!("localci-verify-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("archive.tar.gz");
-        fs::write(&file, b"toolchain").unwrap();
         let good = hex_digest(b"toolchain", Sum::Sha256);
-        assert!(verify(&file, Sum::Sha256, &good).is_ok());
-        assert!(verify(&file, Sum::Sha256, &good.to_uppercase()).is_ok());
-        let bad = verify(&file, Sum::Sha256, &hex_digest(b"other", Sum::Sha256));
+        assert!(verify(b"toolchain", Sum::Sha256, &good, "x").is_ok());
+        assert!(verify(b"toolchain", Sum::Sha256, &good.to_uppercase(), "x").is_ok());
+        let bad = verify(
+            b"toolchain",
+            Sum::Sha256,
+            &hex_digest(b"other", Sum::Sha256),
+            "x",
+        );
         assert!(bad.unwrap_err().contains("checksum mismatch"));
-        assert!(verify(&file, Sum::Sha512, "").is_err());
-        let _ = fs::remove_dir_all(&dir);
+        assert!(verify(b"toolchain", Sum::Sha512, "", "x").is_err());
+    }
+
+    #[test]
+    fn names_cannot_leave_the_folder() {
+        for bad in [
+            "../../x",
+            "/abs/evil",
+            "-x",
+            "a/b",
+            "20.0.0-/../x",
+            "",
+            ".hidden",
+        ] {
+            assert!(safe_name(bad).is_err(), "{bad}");
+        }
+        for good in [
+            "8.0.404",
+            "stable",
+            "1.82.0",
+            "nightly-2024-05-01",
+            "20.0.0-rc.1",
+        ] {
+            assert!(safe_name(good).is_ok(), "{good}");
+        }
     }
 
     #[test]
     fn dotnet_sdks_merge_side_by_side() {
-        let base = std::env::temp_dir().join(format!("localci-merge-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&base);
+        let base = std::env::temp_dir().join(format!("localci-merge-{}", unique()));
         let make = |name: &str, sdk: &str, host: &str| {
             let d = base.join(name);
             fs::create_dir_all(d.join("sdk").join(sdk)).unwrap();
@@ -417,7 +471,22 @@ mod tests {
         }
         assert_eq!(fs::read_to_string(root.join("dotnet")).unwrap(), "host 10");
         assert!(version_key("10.0.100") > version_key("8.0.404"));
+        assert!(version_key("10.0.100") > version_key("10.0.100-rc.1"));
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_lock_is_released_when_its_holder_ends() {
+        let dir = std::env::temp_dir().join(format!("localci-lock-{}", unique()));
+        let first = Lock::take(&dir).unwrap();
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .open(dir.join(".lock"))
+            .unwrap();
+        assert!(matches!(file.try_lock(), Err(fs::TryLockError::WouldBlock)));
+        drop(first);
+        assert!(file.try_lock().is_ok());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

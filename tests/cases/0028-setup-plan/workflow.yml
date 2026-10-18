@@ -62,3 +62,16 @@ jobs:
         with:
           dotnet-version: |
             ${{ env.FROM_JOB }}
+  more:
+    runs-on: localci-host
+    steps:
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          global-json-file: sdk.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ../outside/.nvmrc
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: 1.80.0

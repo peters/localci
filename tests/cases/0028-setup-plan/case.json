@@ -126,11 +126,16 @@
         "request": "1.81.0",
         "source": "rust-toolchain.toml",
         "components": [
-          "rustfmt"
+          "rustfmt",
+          "clippy"
         ],
         "targets": [
           "wasm32-unknown-unknown"
-        ]
+        ],
+        "env": {
+          "CARGO_INCREMENTAL": "0",
+          "RUSTFLAGS": "-D warnings"
+        }
       },
       {
         "leg": "files",
@@ -169,6 +174,39 @@
         "tool": "dotnet",
         "request": "",
         "note": "an earlier step or job sets the version during the run"
+      },
+      {
+        "leg": "more",
+        "step": 1,
+        "tool": "dotnet",
+        "request": "8.0.x",
+        "source": "with.dotnet-version"
+      },
+      {
+        "leg": "more",
+        "step": 1,
+        "tool": "dotnet",
+        "request": "9.0.100",
+        "source": "sdk.json",
+        "exact": true
+      },
+      {
+        "leg": "more",
+        "step": 2,
+        "tool": "node",
+        "request": "",
+        "note": "../outside/.nvmrc is outside the checkout; localci does not read it"
+      },
+      {
+        "leg": "more",
+        "step": 3,
+        "tool": "rust",
+        "request": "1.80.0",
+        "source": "with.toolchain",
+        "env": {
+          "CARGO_INCREMENTAL": "0",
+          "RUSTFLAGS": "-D warnings"
+        }
       }
     ]
   },

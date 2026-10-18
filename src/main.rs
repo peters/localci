@@ -401,7 +401,19 @@ fn real_main() -> Result<ExitCode, String> {
     let sel = &args.selection;
 
     if args.command == "setup" {
-        return setup_command(&args, &legs, &workflow, &root, &contexts, host);
+        return localci::setup::command(
+            &legs,
+            &workflow,
+            &root,
+            &contexts,
+            sel,
+            &localci::setup::Flags {
+                toolchains: args.toolchains.clone(),
+                plan_only: args.plan_only,
+                json: args.json,
+                quiet: args.quiet,
+            },
+        );
     }
     let affected = affected_for(&root, &args, &path)?;
     if args.command != "run" {
@@ -493,11 +505,12 @@ fn real_main() -> Result<ExitCode, String> {
         affected,
         cache,
         parallel,
-        toolchains: args.toolchains.clone().or_else(|| {
-            std::env::var_os("LOCALCI_TOOLCHAINS")
-                .filter(|d| !d.is_empty())
-                .map(PathBuf::from)
-        }),
+        toolchains: args
+            .toolchains
+            .clone()
+            .or_else(|| std::env::var_os("LOCALCI_TOOLCHAINS").map(PathBuf::from))
+            .filter(|d| !d.as_os_str().is_empty())
+            .map(|d| localci::setup::absolute(&d)),
     };
     let started = Instant::now();
     let reports = localci::schedule::run_all(&picked, &workflow, &contexts, sel, &opts);
@@ -538,53 +551,6 @@ fn real_main() -> Result<ExitCode, String> {
         println!("{text}");
     }
     Ok(if failed > 0 {
-        ExitCode::from(1)
-    } else {
-        ExitCode::SUCCESS
-    })
-}
-
-/// `localci setup [--plan]`: the toolchains of the picked legs (ADR-0012).
-fn setup_command(
-    args: &Args,
-    legs: &[workflow::Leg],
-    workflow: &workflow::Workflow,
-    root: &Path,
-    contexts: &Map<String, Value>,
-    host: Os,
-) -> Result<ExitCode, String> {
-    let sel = &args.selection;
-    let picked: Vec<&workflow::Leg> = legs
-        .iter()
-        .filter(|l| l.os == Some(host) && sel.picks(l))
-        .collect();
-    let dir = match &args.toolchains {
-        Some(dir) => dir.clone(),
-        None => {
-            localci::install::default_dir().ok_or("no toolchains folder: pass --toolchains DIR")?
-        }
-    };
-    let needs = localci::setup::plan(&picked, workflow, root, contexts);
-    if args.plan_only {
-        if args.json {
-            let plan = localci::setup::plan_json(&needs, &dir, root);
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&plan).unwrap_or_default()
-            );
-        } else {
-            localci::setup::print_plan(&needs, &dir);
-        }
-        return Ok(ExitCode::SUCCESS);
-    }
-    let (report, failed) = localci::setup::install_all(&needs, &dir, root, args.quiet)?;
-    if args.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&report).unwrap_or_default()
-        );
-    }
-    Ok(if failed {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS

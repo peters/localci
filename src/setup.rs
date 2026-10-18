@@ -1,10 +1,14 @@
 //! `localci setup`: the toolchain plan of the picked legs, and the install (ADR-0012).
 
 use crate::install::{self, Activation, Lock};
+use crate::plan::Selection;
 use crate::toolchain::{self, Need};
-use crate::workflow::{Leg, Workflow};
+use crate::workflow::{Leg, Os, Workflow};
 use serde_json::{json, Map, Value};
-use std::path::Path;
+use std::{
+    path::{Path, PathBuf},
+    process::ExitCode,
+};
 
 /// The needs of the picked legs. Equal requests from several legs are one install.
 pub fn plan(
@@ -160,13 +164,71 @@ pub fn activate_step(
             continue;
         }
         let a = install::locate(need, dir, workspace)?;
-        said.push(format!(
-            "{} {} from {}",
-            title(need),
-            a.version,
-            dir.display()
-        ));
+        let line = format!("{} {} from {}", title(need), a.version, dir.display());
+        if !said.contains(&line) {
+            said.push(line);
+        }
         activations.push(a);
     }
     Ok((activations, format!("toolchain: {}", said.join("; "))))
+}
+
+/// The options of `localci setup`.
+pub struct Flags {
+    pub toolchains: Option<PathBuf>,
+    pub plan_only: bool,
+    pub json: bool,
+    pub quiet: bool,
+}
+
+/// `PATH`, `DOTNET_ROOT` and `RUSTUP_HOME` need an absolute folder: a step with a
+/// `working-directory` would read a relative one from another place.
+pub fn absolute(dir: &Path) -> PathBuf {
+    std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf())
+}
+
+/// `localci setup [--plan]`: the toolchains of the picked legs (ADR-0012).
+pub fn command(
+    legs: &[Leg],
+    workflow: &Workflow,
+    root: &Path,
+    contexts: &Map<String, Value>,
+    sel: &Selection,
+    flags: &Flags,
+) -> Result<ExitCode, String> {
+    let host = Os::host();
+    let picked: Vec<&Leg> = legs
+        .iter()
+        .filter(|l| l.os == Some(host) && sel.picks(l))
+        .collect();
+    let dir = match &flags.toolchains {
+        Some(dir) => dir.clone(),
+        None => install::default_dir().ok_or("no toolchains folder: pass --toolchains DIR")?,
+    };
+    let dir = absolute(&dir);
+    let needs = plan(&picked, workflow, root, contexts);
+    if flags.plan_only {
+        if flags.json {
+            let plan = plan_json(&needs, &dir, root);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&plan).unwrap_or_default()
+            );
+        } else {
+            print_plan(&needs, &dir);
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
+    let (report, failed) = install_all(&needs, &dir, root, flags.quiet)?;
+    if flags.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_default()
+        );
+    }
+    Ok(if failed {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    })
 }
