@@ -46,7 +46,18 @@ fn read_file(workspace: &Path, name: &str) -> Result<String, String> {
             "{name} is outside the checkout; localci does not read it"
         ));
     }
-    std::fs::read_to_string(workspace.join(path)).map_err(|_| format!("{name} is missing"))
+    let full = workspace.join(path);
+    // A symlink must not lead outside the checkout either.
+    let inside = match (full.canonicalize(), workspace.canonicalize()) {
+        (Ok(real), Ok(root)) => real.starts_with(root),
+        _ => return Err(format!("{name} is missing")),
+    };
+    if !inside {
+        return Err(format!(
+            "{name} leads outside the checkout; localci does not read it"
+        ));
+    }
+    std::fs::read_to_string(&full).map_err(|_| format!("{name} is missing"))
 }
 
 fn first_line(text: &str) -> Option<String> {
@@ -119,7 +130,8 @@ fn dotnet(input: Input, workspace: &Path, base: Need) -> Vec<Need> {
         }
     };
     let parsed = read_file(workspace, &file).and_then(|text| {
-        serde_json::from_str::<Value>(&without_comments(&text)).map_err(|e| format!("{file}: {e}"))
+        let text = text.trim_start_matches('\u{feff}');
+        serde_json::from_str::<Value>(&without_comments(text)).map_err(|e| format!("{file}: {e}"))
     });
     match parsed {
         Ok(json) => match json["sdk"]["version"].as_str() {
@@ -339,7 +351,26 @@ fn simple(
             &format!("no {version_input}: the runner's version is used"),
         );
     };
-    match read_file(workspace, &file).map(|t| parse(&t)) {
+    let asdf = match tool {
+        "go" => "golang ",
+        other => &format!("{other} ")[..],
+    };
+    let name = Path::new(&file)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned());
+    let read = read_file(workspace, &file).map(|t| match name.as_deref() {
+        Some(".tool-versions") => t
+            .lines()
+            .find_map(|l| l.trim().strip_prefix(asdf).map(|v| v.trim().to_string())),
+        Some("pyproject.toml") => t.lines().find_map(|l| {
+            let (k, v) = l.split_once('=')?;
+            (k.trim() == "requires-python")
+                .then(|| toml_strings(v).into_iter().next())
+                .flatten()
+        }),
+        _ => parse(&t),
+    });
+    match read {
         Ok(Some(v)) => vec![need(&base, &v, &file)],
         Ok(None) => missing(base, &format!("{file} names no version")),
         Err(why) => missing(base, &why),

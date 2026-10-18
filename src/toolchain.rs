@@ -178,12 +178,19 @@ pub fn needs_for(
                     .iter()
                     .any(|n| raw.contains(&format!("env.{n}")))
         };
-        let later = workflow_env.is_some() && step.with.values().any(|v| from_run(&yaml_text(v)));
+        // Only the inputs that name a version or its file decide this.
+        let later = workflow_env.is_some()
+            && step
+                .with
+                .iter()
+                .filter(|(k, _)| VERSION_INPUTS.contains(&k.as_str()))
+                .any(|(_, v)| from_run(&yaml_text(v)));
         let input = |name: &str| -> Option<String> {
             let raw = yaml_text(step.with.get(name)?);
             let text = expr::interpolate(&raw, &ctx).unwrap_or(raw);
             let text = text.trim().to_string();
-            (!text.is_empty()).then_some(text)
+            // An empty `rustflags` turns the action's default flags off.
+            (!text.is_empty() || name == "rustflags").then_some(text)
         };
         let base_need = Need {
             leg: leg.key.clone(),
@@ -214,6 +221,22 @@ pub fn needs_for(
     }
     out
 }
+
+/// The inputs of the known actions that name a version or the file of a version.
+const VERSION_INPUTS: &[&str] = &[
+    "dotnet-version",
+    "global-json-file",
+    "node-version",
+    "node-version-file",
+    "toolchain",
+    "go-version",
+    "go-version-file",
+    "python-version",
+    "python-version-file",
+    "java-version",
+    "java-version-file",
+    "distribution",
+];
 
 /// `true` for a version with three numeric parts, `v` allowed: `20.11.1`, `v8.0.403`.
 pub fn is_exact(version: &str) -> bool {

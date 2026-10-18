@@ -180,7 +180,8 @@ fn remember(dir: &Path, tool: Tool, request: &str, version: &str) -> Result<(), 
     let mut json: Map<String, Value> = match fs::read_to_string(&path) {
         Ok(text) => serde_json::from_str(&text)
             .map_err(|e| format!("{}: {e}; fix or delete it", path.display()))?,
-        Err(_) => Map::new(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Map::new(),
+        Err(e) => return Err(format!("{}: {e}; fix or delete it", path.display())),
     };
     json.insert(
         format!("{} {request}", tool.as_str()),
@@ -232,6 +233,22 @@ fn unpack(bytes: &[u8], final_dir: &Path, strip: bool) -> Result<(), String> {
     result
 }
 
+/// Removes the temporary folders of a setup that a kill stopped. The caller holds
+/// the lock, so no other setup uses them.
+pub fn clean_leftovers(dir: &Path) {
+    for folder in [dir.to_path_buf(), dir.join("node"), dir.join("rust")] {
+        for entry in fs::read_dir(&folder).into_iter().flatten().flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if [".tmp-", ".unpacked-", ".rustup-init-", ".requests-"]
+                .iter()
+                .any(|p| name.starts_with(p))
+            {
+                let _ = fs::remove_dir_all(entry.path()).or_else(|_| fs::remove_file(entry.path()));
+            }
+        }
+    }
+}
+
 /// What `setup` did for one need.
 pub struct Installed {
     pub version: String,
@@ -245,10 +262,36 @@ pub fn install(need: &Need, dir: &Path, workspace: &Path) -> Result<Installed, S
     if need.request.is_empty() {
         return Err(need.note.clone().unwrap_or_else(|| "no version".into()));
     }
+    // An exact version that is there needs no network. For other requests, the
+    // remembered version is used when the source cannot be reached.
+    if tool != Tool::Rust {
+        if let Ok(a) = locate(need, dir, workspace) {
+            if need.exact {
+                return Ok(Installed {
+                    version: a.version,
+                    path: a.paths[0].clone(),
+                    fresh: false,
+                });
+            }
+        }
+    }
     let platform = platform()?;
+    let offline = |e: String| -> Result<Installed, String> {
+        locate(need, dir, workspace)
+            .map(|a| Installed {
+                version: a.version,
+                path: a.paths[0].clone(),
+                fresh: false,
+            })
+            .map_err(|_| e)
+    };
     match tool {
         Tool::Dotnet => {
-            let (version, url, hash) = crate::install_sources::dotnet(&need.request, &platform)?;
+            let (version, url, hash) =
+                match crate::install_sources::dotnet(&need.request, &platform) {
+                    Ok(found) => found,
+                    Err(e) => return offline(e),
+                };
             safe_name(&version)?;
             let fresh = dotnet_side_by_side(dir, &version, &url, &hash)?;
             remember(dir, tool, &need.request, &version)?;
@@ -259,7 +302,11 @@ pub fn install(need: &Need, dir: &Path, workspace: &Path) -> Result<Installed, S
             })
         }
         Tool::Node => {
-            let (version, url, hash) = crate::install_sources::node(&need.request, &platform)?;
+            let (version, url, hash) = match crate::install_sources::node(&need.request, &platform)
+            {
+                Ok(found) => found,
+                Err(e) => return offline(e),
+            };
             let target = dir.join("node").join(safe_name(&version)?);
             let fresh = archive(&target, &url, Sum::Sha256, &hash, true)?;
             remember(dir, tool, &need.request, &version)?;
@@ -318,17 +365,22 @@ fn dotnet_side_by_side(dir: &Path, version: &str, url: &str, hash: &str) -> Resu
     Ok(true)
 }
 
-/// Numeric parts, then 1 for a release and 0 for a prerelease, so `10.0.100` ranks
-/// above `10.0.100-rc.1`.
-fn version_key(v: &str) -> (Vec<u64>, u8) {
-    let (base, release) = match v.split_once('-') {
-        Some((base, _)) => (base, 0),
-        None => (v, 1),
+/// Numeric parts, then 1 for a release and 0 for a prerelease, then the prerelease
+/// parts, so `10.0.100` > `10.0.100-rc.1` > `10.0.100-preview.7`.
+type VersionKey = (Vec<u64>, u8, Vec<(u64, String)>);
+
+fn version_key(v: &str) -> VersionKey {
+    let (base, pre) = match v.split_once('-') {
+        Some((base, pre)) => (base, Some(pre)),
+        None => (v, None),
     };
-    (
-        base.split('.').map(|p| p.parse().unwrap_or(0)).collect(),
-        release,
-    )
+    let numbers = base.split('.').map(|p| p.parse().unwrap_or(0)).collect();
+    let pre_parts = pre
+        .unwrap_or_default()
+        .split('.')
+        .map(|p| (p.parse().unwrap_or(0), p.to_string()))
+        .collect();
+    (numbers, u8::from(pre.is_none()), pre_parts)
 }
 
 /// Moves what `dst` does not have from `src` into `dst`. A file that both have
@@ -472,6 +524,8 @@ mod tests {
         assert_eq!(fs::read_to_string(root.join("dotnet")).unwrap(), "host 10");
         assert!(version_key("10.0.100") > version_key("8.0.404"));
         assert!(version_key("10.0.100") > version_key("10.0.100-rc.1"));
+        assert!(version_key("10.0.100-rc.1") > version_key("10.0.100-preview.7"));
+        assert!(version_key("10.0.100-rc.2") > version_key("10.0.100-rc.1"));
         let _ = fs::remove_dir_all(&base);
     }
 

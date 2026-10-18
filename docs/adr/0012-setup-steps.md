@@ -21,7 +21,8 @@ tools. A second list can become different from CI.
    setup step declares. It shows the version, the source of the version and
    one of these states: `installs`, `plan only`, `nothing to install` or
    `not supported`. `--json` gives the same data as JSON. The plan needs no
-   network.
+   network. A setup step that `--skip` names, or whose `if:` is false before
+   the run, is not in the plan, and `localci setup` does not install it.
 2. localci reads these actions and inputs:
 
    | Action | Inputs and files |
@@ -39,10 +40,10 @@ tools. A second list can become different from CI.
    that an earlier step or job sets (through `steps.`, `needs.` or an `env:`
    value that reads them) is known only during the run. The plan says so. It
    does not use a version file in that case, because the action does not
-   either.
+   either. Only the inputs that name a version or its file decide this.
 3. A version file must be in the checkout. localci does not read a path
-   outside it (absolute, or with `..`), so a plan never shows a file of the
-   machine. A version or toolchain name must be a plain name (letters, digits,
+   outside it (absolute, with `..`, or a symlink that leads out), so a plan
+   never shows a file of the machine. A version or toolchain name must be a plain name (letters, digits,
    `.`, `_`, `+` and `-`, with a letter or digit first), so it cannot point
    outside the toolchains folder or become an option of a command.
 4. localci does not guess. A range such as `>=18` or `^20` stays a request.
@@ -72,16 +73,20 @@ tools. A second list can become different from CI.
      asks for `8.0.x` and `10.0.x` gets both SDKs and both runtimes.
      `dotnet/.versions/` marks each complete SDK.
    - Rust uses one rustup home, `rust/`. A toolchain counts as installed when
-     its channel manifest is there and it has each requested component.
+     its channel manifest is there and it has each requested component and
+     target.
 
    localci unpacks into a new temporary folder and then renames it, so a
    stopped setup does not leave a half folder. An operating system lock on
    `.lock` stops a second setup until the first one ends. The lock ends with
-   the process, also after Ctrl-C or a kill. localci never uses `sudo`.
+   the process, also after Ctrl-C or a kill. The next setup removes the
+   temporary folders that a kill left. localci never uses `sudo`.
 8. For a request that is not exact, for example `20` or `8.0.x`, localci
    writes the version that it installed to `requests.json`. A run then finds it
    without the network. A `requests.json` that localci cannot read stops the
-   setup, and localci does not replace it.
+   setup, and localci does not replace it. An exact version that is installed
+   needs no network. When the source of a request that is not exact cannot be
+   reached, `localci setup` uses the version that it remembered.
 9. With `localci run --toolchains DIR` (or `LOCALCI_TOOLCHAINS`), a setup step
    does not show `skipped`. It puts the toolchain of `DIR` first on `PATH` and
    sets the variables of the tool and the action: `DOTNET_ROOT` for .NET,

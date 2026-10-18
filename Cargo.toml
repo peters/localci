@@ -2,6 +2,8 @@
 name = "localci"
 version = "0.1.0"
 edition = "2021"
+# File::try_lock (the toolchains lock, ADR-0012) needs 1.89.
+rust-version = "1.89"
 description = "Run the GitHub Actions jobs that match this host, locally, so CI feedback does not wait on GitHub"
 license = "MIT"
 repository = "https://github.com/peters/localci"

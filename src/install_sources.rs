@@ -248,7 +248,15 @@ pub fn rust(need: &Need, dir: &Path, workspace: &Path) -> Result<Installed, Stri
         let _ = fs::remove_dir_all(&init_dir);
         ran?;
     }
-    let installed = rust_activation(need, dir, workspace).is_some();
+    if let Some(a) = rust_activation(need, dir, workspace) {
+        // Complete with each component and target: no network needed.
+        return Ok(Installed {
+            version: a.version,
+            path: toolchain_dir(dir, request, &triple),
+            fresh: false,
+        });
+    }
+    let installed = false;
     let mut cmd = Command::new(bin.join("rustup"));
     cmd.args(["toolchain", "install", request, "--profile", "minimal"]);
     for c in &need.components {
@@ -327,7 +335,11 @@ pub fn rust_activation(need: &Need, dir: &Path, workspace: &Path) -> Option<Acti
             l == format!("{c}-{triple}") || l.starts_with(&format!("{c}-preview-")) || l == c
         })
     };
-    if !tc.join("bin/rustc").is_file() || !need.components.iter().all(has) {
+    let has_target = |t: &String| components.lines().any(|l| l == format!("rust-std-{t}"));
+    if !tc.join("bin/rustc").is_file()
+        || !need.components.iter().all(has)
+        || !need.targets.iter().all(has_target)
+    {
         return None;
     }
     let mut env = vec![(

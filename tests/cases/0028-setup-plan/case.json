@@ -1,5 +1,5 @@
 {
-  "description": "setup --plan reads the inputs of known setup actions, the workflow and job env, and the version files they point at, offline.",
+  "description": "setup --plan reads the inputs of known setup actions, the env, and the version files they point at, offline. It leaves out a step whose if: is false, reads no file outside the checkout, and keeps an empty rustflags.",
   "args": [
     "setup",
     "--plan",
@@ -207,6 +207,45 @@
           "CARGO_INCREMENTAL": "0",
           "RUSTFLAGS": "-D warnings"
         }
+      },
+      {
+        "leg": "more",
+        "step": 4,
+        "tool": "rust",
+        "request": "1.79.0",
+        "env": {
+          "CARGO_INCREMENTAL": "0",
+          "RUSTFLAGS": null
+        }
+      },
+      {
+        "leg": "more",
+        "step": 5,
+        "tool": "python",
+        "request": ">=3.11",
+        "source": "pyproject.toml"
+      },
+      {
+        "leg": "more",
+        "step": 6,
+        "tool": "python",
+        "request": "3.12.4",
+        "source": ".tool-versions",
+        "exact": true
+      },
+      {
+        "leg": "more",
+        "step": 7,
+        "tool": "node",
+        "request": "",
+        "note": "linked-version leads outside the checkout; localci does not read it"
+      },
+      {
+        "leg": "more",
+        "step": 9,
+        "tool": "node",
+        "request": "21.7.3",
+        "exact": true
       }
     ]
   },

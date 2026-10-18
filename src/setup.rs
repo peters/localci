@@ -11,14 +11,25 @@ use std::{
 };
 
 /// The needs of the picked legs. Equal requests from several legs are one install.
+/// A setup step that `--skip` names, or whose `if:` is false before the run, is not
+/// in the plan: `run` would not use it either.
 pub fn plan(
     legs: &[&Leg],
     workflow: &Workflow,
     workspace: &Path,
     contexts: &Map<String, Value>,
+    sel: &Selection,
 ) -> Vec<Need> {
     legs.iter()
-        .flat_map(|leg| toolchain::needs_for(leg, workspace, contexts, Some(&workflow.env)))
+        .flat_map(|leg| {
+            toolchain::needs_for(leg, workspace, contexts, Some(&workflow.env))
+                .into_iter()
+                .filter(move |n| {
+                    let step = &leg.job.steps[n.step - 1];
+                    !sel.skips(leg, n.step, step)
+                        && crate::plan::static_if(leg, step, contexts) != Some(false)
+                })
+        })
         .collect()
 }
 
@@ -99,6 +110,7 @@ pub fn install_all(
     quiet: bool,
 ) -> Result<(Value, bool), String> {
     let _lock = Lock::take(dir)?;
+    install::clean_leftovers(dir);
     let mut done: Vec<&Need> = Vec::new();
     let mut results = Vec::new();
     let mut failed = false;
@@ -201,12 +213,16 @@ pub fn command(
         .iter()
         .filter(|l| l.os == Some(host) && sel.picks(l))
         .collect();
-    let dir = match &flags.toolchains {
+    let dir = match flags
+        .toolchains
+        .as_ref()
+        .filter(|d| !d.as_os_str().is_empty())
+    {
         Some(dir) => dir.clone(),
         None => install::default_dir().ok_or("no toolchains folder: pass --toolchains DIR")?,
     };
     let dir = absolute(&dir);
-    let needs = plan(&picked, workflow, root, contexts);
+    let needs = plan(&picked, workflow, root, contexts, sel);
     if flags.plan_only {
         if flags.json {
             let plan = plan_json(&needs, &dir, root);
