@@ -408,6 +408,9 @@ pub struct Activation {
     pub version: String,
     pub paths: Vec<PathBuf>,
     pub env: Vec<(String, String)>,
+    /// `rust 1.83.0`: a run adds it to `LOCALCI_TOOLCHAINS`, which is part of the
+    /// cache key, so a channel update does not replay an old result.
+    pub label: String,
 }
 
 pub fn locate(need: &Need, dir: &Path, workspace: &Path) -> Result<Activation, String> {
@@ -448,6 +451,7 @@ pub fn locate(need: &Need, dir: &Path, workspace: &Path) -> Result<Activation, S
                 version,
                 paths: vec![bin],
                 env,
+                label: String::new(),
             }
         }
         Tool::Rust => {
@@ -458,6 +462,7 @@ pub fn locate(need: &Need, dir: &Path, workspace: &Path) -> Result<Activation, S
     activation
         .env
         .extend(need.env.iter().map(|(k, v)| (k.clone(), v.clone())));
+    activation.label = format!("{} {}", tool.as_str(), activation.version);
     Ok(activation)
 }
 

@@ -366,6 +366,7 @@ pub fn rust_activation(need: &Need, dir: &Path, workspace: &Path) -> Option<Acti
         version,
         paths: vec![dir.join("rust/cargo/bin")],
         env,
+        label: String::new(),
     })
 }
 
