@@ -1,0 +1,64 @@
+name: ci
+on: [push, pull_request]
+env:
+  NODE_PIN: 18.20.4
+jobs:
+  build:
+    runs-on: localci-host
+    strategy:
+      matrix:
+        node: [20, 22.11.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: example/setup-thing@v1
+      - run: echo build
+  files:
+    runs-on: localci-host
+    steps:
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.100
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+  env-and-steps:
+    runs-on: localci-host
+    env:
+      SDK: 9.0.x
+      FROM_JOB: ${{ needs.files.outputs.sdk }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_PIN }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.SDK }}
+      - id: pick
+        run: echo "version=3.13" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ steps.pick.outputs.version }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            ${{ env.FROM_JOB }}

@@ -13,6 +13,8 @@ categories = ["command-line-utilities", "development-tools"]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml = "0.9"
+# Verifies downloaded toolchains against the SHA-256 and SHA-512 sums of their official sources (ADR-0012).
+sha2 = "0.10"
 
 [profile.release]
 strip = true

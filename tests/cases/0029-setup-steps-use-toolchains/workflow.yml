@@ -1,0 +1,18 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: localci-host
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.11.1
+      - uses: actions/setup-dotnet@v4
+      - run: echo "PATH=$PATH"
+  missing:
+    runs-on: localci-host
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.0.0
+      - run: echo still runs

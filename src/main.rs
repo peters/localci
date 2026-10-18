@@ -16,6 +16,8 @@ USAGE:
   localci list [OPTIONS] [TARGET...]   the workflow's legs and which run here
   localci plan [OPTIONS] [TARGET...]   the picked legs and the steps that would run
   localci run  [OPTIONS] [TARGET...]   run them in this checkout
+  localci setup [--plan] [OPTIONS] [TARGET...]
+                                       install the toolchains that the legs' setup actions ask for
   localci skill install                install the agent skill for Claude Code, Codex and ~/.agents
   localci check [PATH...]              check that localci understands every workflow under PATH
                                        (a repository, a workflow file, or a folder of repositories)
@@ -39,6 +41,10 @@ OPTIONS:
       --cache           reuse steps that passed before on the same inputs
   -j, --parallel N      run N legs at the same time (0: pick from the CPU count)
       --fast            --affected --cache --parallel 0, for quick feedback while you work
+      --toolchains DIR  setup: install into DIR; run: setup steps use the toolchains of DIR
+                        (default for setup: $LOCALCI_TOOLCHAINS or ~/.cache/localci/toolchains;
+                        run uses DIR only with this option or $LOCALCI_TOOLCHAINS)
+      --plan            setup: print the toolchains and where their versions come from
   -q, --quiet           hide step output; print the tail of a failing step's log
       --json            print the plan or the run report as JSON on stdout
   -V, --version
@@ -58,6 +64,8 @@ struct Args {
     base: Option<String>,
     cache: bool,
     parallel: Option<usize>,
+    toolchains: Option<PathBuf>,
+    plan_only: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -75,6 +83,8 @@ fn parse_args() -> Result<Args, String> {
         base: None,
         cache: false,
         parallel: None,
+        toolchains: None,
+        plan_only: false,
     };
     let pair = |v: String| {
         v.split_once('=')
@@ -120,11 +130,13 @@ fn parse_args() -> Result<Args, String> {
                 args.cache = true;
                 args.parallel.get_or_insert(0);
             }
+            "--toolchains" => args.toolchains = Some(PathBuf::from(value(&arg)?)),
+            "--plan" => args.plan_only = true,
             "-q" | "--quiet" => args.quiet = true,
             "--json" => args.json = true,
             flag if flag.starts_with('-') => return Err(format!("unknown option `{flag}`")),
             word if args.command.is_empty()
-                && matches!(word, "list" | "plan" | "run" | "check") =>
+                && matches!(word, "list" | "plan" | "run" | "check" | "setup") =>
             {
                 args.command = word.into()
             }
@@ -388,6 +400,9 @@ fn real_main() -> Result<ExitCode, String> {
     let host = Os::host();
     let sel = &args.selection;
 
+    if args.command == "setup" {
+        return setup_command(&args, &legs, &workflow, &root, &contexts, host);
+    }
     let affected = affected_for(&root, &args, &path)?;
     if args.command != "run" {
         if args.json {
@@ -478,6 +493,11 @@ fn real_main() -> Result<ExitCode, String> {
         affected,
         cache,
         parallel,
+        toolchains: args.toolchains.clone().or_else(|| {
+            std::env::var_os("LOCALCI_TOOLCHAINS")
+                .filter(|d| !d.is_empty())
+                .map(PathBuf::from)
+        }),
     };
     let started = Instant::now();
     let reports = localci::schedule::run_all(&picked, &workflow, &contexts, sel, &opts);
@@ -518,6 +538,53 @@ fn real_main() -> Result<ExitCode, String> {
         println!("{text}");
     }
     Ok(if failed > 0 {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    })
+}
+
+/// `localci setup [--plan]`: the toolchains of the picked legs (ADR-0012).
+fn setup_command(
+    args: &Args,
+    legs: &[workflow::Leg],
+    workflow: &workflow::Workflow,
+    root: &Path,
+    contexts: &Map<String, Value>,
+    host: Os,
+) -> Result<ExitCode, String> {
+    let sel = &args.selection;
+    let picked: Vec<&workflow::Leg> = legs
+        .iter()
+        .filter(|l| l.os == Some(host) && sel.picks(l))
+        .collect();
+    let dir = match &args.toolchains {
+        Some(dir) => dir.clone(),
+        None => {
+            localci::install::default_dir().ok_or("no toolchains folder: pass --toolchains DIR")?
+        }
+    };
+    let needs = localci::setup::plan(&picked, workflow, root, contexts);
+    if args.plan_only {
+        if args.json {
+            let plan = localci::setup::plan_json(&needs, &dir, root);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&plan).unwrap_or_default()
+            );
+        } else {
+            localci::setup::print_plan(&needs, &dir);
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
+    let (report, failed) = localci::setup::install_all(&needs, &dir, root, args.quiet)?;
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_default()
+        );
+    }
+    Ok(if failed {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS

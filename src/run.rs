@@ -25,6 +25,8 @@ pub struct Options {
     pub cache: Option<crate::cache::Cache>,
     /// `--parallel`: the number of legs that run at the same time.
     pub parallel: usize,
+    /// `--toolchains`: setup steps use the toolchains of this folder (ADR-0012).
+    pub toolchains: Option<PathBuf>,
 }
 
 #[derive(Serialize)]
@@ -215,6 +217,26 @@ pub(crate) fn run_leg(
         };
         contexts.insert("steps".into(), Value::Object(steps_ctx.clone()));
         contexts.insert("env".into(), Value::Object(env.clone()));
+        if let (Some(dir), Some(uses)) = (&opts.toolchains, &step.uses) {
+            if crate::toolchain::is_setup_action(uses) {
+                match crate::setup::activate_step(leg, index, &opts.workspace, &contexts, dir) {
+                    Ok((activations, said)) => {
+                        for a in activations {
+                            let paths = a.paths.iter().map(|p| p.display().to_string());
+                            extra_path.splice(0..0, paths);
+                            env.extend(a.env.into_iter().map(|(k, v)| (k, Value::String(v))));
+                        }
+                        report.outcome = "success";
+                        report.reason = Some(said);
+                    }
+                    Err(why) => report.reason = Some(why),
+                }
+                let text = report.reason.as_deref().unwrap_or_default();
+                eprintln!("── {} · {index}/{total} {label}: {text}", leg.name);
+                reports.push(report);
+                continue;
+            }
+        }
         if let Some(reason) = sel.leaves_out(leg, index, step) {
             report.reason = Some(reason.into());
             reports.push(report);
