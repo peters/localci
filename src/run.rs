@@ -241,10 +241,10 @@ pub(crate) fn run_leg(
                                 extra_path
                                     .splice(0..0, a.paths.iter().map(|p| p.display().to_string()));
                                 env.extend(a.env.into_iter().map(|(k, v)| (k, Value::String(v))));
-                                let all = env.get("LOCALCI_TOOLCHAINS").map(expr::to_text);
+                                let all = env.get("LOCALCI_TOOLCHAIN_VERSIONS").map(expr::to_text);
                                 let all = [all.unwrap_or_default(), a.label].join(" ");
                                 env.insert(
-                                    "LOCALCI_TOOLCHAINS".into(),
+                                    "LOCALCI_TOOLCHAIN_VERSIONS".into(),
                                     Value::String(all.trim().into()),
                                 );
                             }

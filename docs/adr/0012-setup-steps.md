@@ -94,7 +94,7 @@ tools. A second list can become different from CI.
    does not show `skipped`. It puts the toolchain of `DIR` first on `PATH` and
    sets the variables of the tool and the action: `DOTNET_ROOT` for .NET,
    `RUSTUP_HOME` and `RUSTUP_TOOLCHAIN` for Rust, and the variables of item 2.
-   It also adds the tool and the installed version to `LOCALCI_TOOLCHAINS`,
+   It also adds the tool and the installed version to `LOCALCI_TOOLCHAIN_VERSIONS`,
    for example `rust 1.83.0 dotnet 8.0.426`. This variable is part of the key
    of `--cache` (ADR-0010), so a new version of a channel such as `stable`
    does not reuse a result of the old version.

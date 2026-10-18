@@ -408,7 +408,7 @@ pub struct Activation {
     pub version: String,
     pub paths: Vec<PathBuf>,
     pub env: Vec<(String, String)>,
-    /// `rust 1.83.0`: a run adds it to `LOCALCI_TOOLCHAINS`, which is part of the
+    /// `rust 1.83.0`: a run adds it to `LOCALCI_TOOLCHAIN_VERSIONS`, which is part of the
     /// cache key, so a channel update does not replay an old result.
     pub label: String,
 }

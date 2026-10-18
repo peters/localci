@@ -12,7 +12,7 @@ jobs:
         if: ${{ github.event_name == 'release' }}
         with:
           node-version: 22.0.0
-      - run: test "$LOCALCI_TOOLCHAINS" = "node 20.11.1"
+      - run: test "$LOCALCI_TOOLCHAIN_VERSIONS" = "node 20.11.1"
   missing:
     runs-on: localci-host
     steps:
