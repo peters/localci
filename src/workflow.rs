@@ -108,6 +108,9 @@ pub struct Step {
     pub run: Option<String>,
     #[serde(default, deserialize_with = "text")]
     pub uses: Option<String>,
+    /// The inputs of a `uses:` step. Only setup actions read them (ADR-0012).
+    #[serde(default)]
+    pub with: BTreeMap<String, Yaml>,
     #[serde(default, deserialize_with = "text")]
     pub shell: Option<String>,
     #[serde(rename = "working-directory")]

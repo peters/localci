@@ -1,0 +1,256 @@
+{
+  "description": "setup --plan reads the inputs of known setup actions, the env, and the version files they point at, offline. It leaves out a step whose if: is false, reads no file outside the checkout, and keeps an empty rustflags.",
+  "args": [
+    "setup",
+    "--plan",
+    "--json",
+    "--toolchains",
+    "toolchains"
+  ],
+  "expect": {
+    "needs": [
+      {
+        "leg": "build#1",
+        "step": 2,
+        "tool": "dotnet",
+        "request": "8.0.404",
+        "source": "global.json",
+        "exact": true,
+        "policy": "rollForward: latestFeature",
+        "status": "installs",
+        "installed": null
+      },
+      {
+        "leg": "build#1",
+        "step": 3,
+        "tool": "node",
+        "request": "20",
+        "source": "with.node-version",
+        "exact": false,
+        "status": "installs"
+      },
+      {
+        "leg": "build#1",
+        "step": 4,
+        "tool": "rust",
+        "request": "stable",
+        "source": "the action ref",
+        "components": [
+          "clippy",
+          "rustfmt"
+        ],
+        "status": "installs"
+      },
+      {
+        "leg": "build#1",
+        "step": 5,
+        "tool": "go",
+        "request": "1.22.5",
+        "source": "go.mod",
+        "exact": true,
+        "status": "plan only"
+      },
+      {
+        "leg": "build#1",
+        "step": 6,
+        "tool": "java",
+        "request": "21",
+        "policy": "distribution: temurin",
+        "status": "plan only"
+      },
+      {
+        "leg": "build#1",
+        "step": 7,
+        "tool": null,
+        "action": "example/setup-thing@v1",
+        "status": "not supported"
+      },
+      {
+        "leg": "build#2",
+        "step": 2,
+        "tool": "dotnet"
+      },
+      {
+        "leg": "build#2",
+        "step": 3,
+        "tool": "node",
+        "request": "22.11.0",
+        "exact": true
+      },
+      {
+        "leg": "build#2",
+        "step": 4,
+        "tool": "rust"
+      },
+      {
+        "leg": "build#2",
+        "step": 5,
+        "tool": "go"
+      },
+      {
+        "leg": "build#2",
+        "step": 6,
+        "tool": "java"
+      },
+      {
+        "leg": "build#2",
+        "step": 7,
+        "tool": null
+      },
+      {
+        "leg": "files",
+        "step": 1,
+        "tool": "dotnet",
+        "request": "8.0.x",
+        "exact": false
+      },
+      {
+        "leg": "files",
+        "step": 1,
+        "tool": "dotnet",
+        "request": "9.0.100",
+        "exact": true
+      },
+      {
+        "leg": "files",
+        "step": 2,
+        "tool": "node",
+        "request": ">=20",
+        "source": "package.json",
+        "exact": false
+      },
+      {
+        "leg": "files",
+        "step": 3,
+        "tool": "rust",
+        "request": "1.81.0",
+        "source": "rust-toolchain.toml",
+        "components": [
+          "rustfmt",
+          "clippy"
+        ],
+        "targets": [
+          "wasm32-unknown-unknown"
+        ],
+        "env": {
+          "CARGO_INCREMENTAL": "0",
+          "RUSTFLAGS": "-D warnings"
+        }
+      },
+      {
+        "leg": "files",
+        "step": 4,
+        "tool": "python",
+        "request": "3.12",
+        "source": ".python-version",
+        "status": "plan only"
+      },
+      {
+        "leg": "env-and-steps",
+        "step": 1,
+        "tool": "node",
+        "request": "18.20.4",
+        "exact": true,
+        "source": "with.node-version"
+      },
+      {
+        "leg": "env-and-steps",
+        "step": 2,
+        "tool": "dotnet",
+        "request": "9.0.x",
+        "exact": false
+      },
+      {
+        "leg": "env-and-steps",
+        "step": 4,
+        "tool": "python",
+        "request": "",
+        "note": "an earlier step or job sets the version during the run",
+        "status": "nothing to install"
+      },
+      {
+        "leg": "env-and-steps",
+        "step": 5,
+        "tool": "dotnet",
+        "request": "",
+        "note": "an earlier step or job sets the version during the run"
+      },
+      {
+        "leg": "more",
+        "step": 1,
+        "tool": "dotnet",
+        "request": "8.0.x",
+        "source": "with.dotnet-version"
+      },
+      {
+        "leg": "more",
+        "step": 1,
+        "tool": "dotnet",
+        "request": "9.0.100",
+        "source": "sdk.json",
+        "exact": true
+      },
+      {
+        "leg": "more",
+        "step": 2,
+        "tool": "node",
+        "request": "",
+        "note": "../outside/.nvmrc is outside the checkout; localci does not read it"
+      },
+      {
+        "leg": "more",
+        "step": 3,
+        "tool": "rust",
+        "request": "1.80.0",
+        "source": "with.toolchain",
+        "env": {
+          "CARGO_INCREMENTAL": "0",
+          "RUSTFLAGS": "-D warnings"
+        }
+      },
+      {
+        "leg": "more",
+        "step": 4,
+        "tool": "rust",
+        "request": "1.79.0",
+        "env": {
+          "CARGO_INCREMENTAL": "0",
+          "RUSTFLAGS": null
+        }
+      },
+      {
+        "leg": "more",
+        "step": 5,
+        "tool": "python",
+        "request": ">=3.11",
+        "source": "pyproject.toml"
+      },
+      {
+        "leg": "more",
+        "step": 6,
+        "tool": "python",
+        "request": "3.12.4",
+        "source": ".tool-versions",
+        "exact": true
+      },
+      {
+        "leg": "more",
+        "step": 7,
+        "tool": "node",
+        "request": "",
+        "note": "linked-version leads outside the checkout; localci does not read it"
+      },
+      {
+        "leg": "more",
+        "step": 9,
+        "tool": "node",
+        "request": "21.7.3",
+        "exact": true
+      }
+    ]
+  },
+  "hosts": [
+    "linux",
+    "macos"
+  ]
+}

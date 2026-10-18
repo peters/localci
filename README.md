@@ -171,6 +171,28 @@ with their health checks and port mappings, removed when the job ends. If you
 already run those services yourself, add `--no-services`. Set
 `LOCALCI_DOCKER=podman` to use Podman.
 
+## Toolchains
+
+On a fresh machine, for example the cloud machine of an agent, your CI's tools
+are missing. Your workflow already says which ones it needs: `setup-dotnet`
+reads `global.json`, `setup-node` reads `.nvmrc`, the Rust actions read
+`rust-toolchain.toml`. localci reads the same inputs and installs those
+versions for you:
+
+```sh
+localci setup --plan            # what the setup steps ask for, and where the version comes from
+localci setup                   # install it (.NET SDK, Node.js and Rust)
+localci run --toolchains ~/.cache/localci/toolchains
+```
+
+Downloads come from the official sources (the .NET release metadata,
+nodejs.org, static.rust-lang.org) and localci checks each one against its
+published checksum before it uses it. Nothing needs `sudo`. Every version gets
+its own folder, so two repositories can use different versions side by side.
+With `--toolchains` (or `LOCALCI_TOOLCHAINS`), each setup step of a run puts
+the installed version first on `PATH`, and the folder can be read-only. Go,
+Python and Java show up in the plan, but localci does not install them yet.
+
 ## How it compares
 
 [act](https://github.com/nektos/act) is the well-known tool for this, and

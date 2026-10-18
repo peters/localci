@@ -86,6 +86,11 @@ impl Selection {
             })
     }
 
+    /// `true` when `--skip` names this step.
+    pub fn skips(&self, leg: &Leg, index: usize, step: &Step) -> bool {
+        self.skip.iter().any(|p| step_matches(p, leg, index, step))
+    }
+
     /// Why this step does not run, or `None` when it does.
     pub fn leaves_out(&self, leg: &Leg, index: usize, step: &Step) -> Option<&'static str> {
         let matches = |pattern: &String| step_matches(pattern, leg, index, step);

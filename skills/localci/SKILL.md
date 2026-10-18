@@ -42,6 +42,9 @@ would catch for this change:
   tools are already on this machine (check with `command -v`), propose
   `--skip-setup`. Never run a `sudo` step without asking.
 - Legs with `"runnable": false` need another OS. List them as not covered.
+- `uses:` setup actions (setup-dotnet, setup-node, the Rust actions) are skipped
+  unless the machine has the tools. On a fresh machine, run `localci setup` first
+  (`localci setup --plan` shows the versions), then `localci run --toolchains DIR`.
 
 Ask one question with AskUserQuestion (multiSelect) listing the runnable legs,
 with your recommendation first and marked "(Recommended)". Skip the question if
