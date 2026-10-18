@@ -168,7 +168,6 @@ pub fn needs_for(
             contexts: &step_contexts,
             status: Status::Success,
         };
-        // Before a run, an input from an earlier step or job is not known yet.
         // Before a run, an input from an earlier step or job is not known yet. The
         // action does not fall back to a version file then, so the plan does not either.
         let from_run = |raw: &str| {
