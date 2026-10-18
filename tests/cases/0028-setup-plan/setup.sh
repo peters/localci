@@ -6,4 +6,4 @@ printf '[toolchain]\nchannel = "1.81.0" # pinned\nprofile = "default"\ncomponent
 printf '\357\273\277{\n  // pinned for the build\n  "sdk": { "version": "9.0.100" }\n}\n' > sdk.json
 printf '[project]\nname = "x"\nrequires-python = ">=3.11"\n' > pyproject.toml
 printf 'nodejs 20.1.0\npython 3.12.4\n' > .tool-versions
-ln -s /etc/hostname linked-version
+ln -s /etc/hosts linked-version
