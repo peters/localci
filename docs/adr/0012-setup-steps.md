@@ -74,7 +74,10 @@ tools. A second list can become different from CI.
      `dotnet/.versions/` marks each complete SDK.
    - Rust uses one rustup home, `rust/`. A toolchain counts as installed when
      its channel manifest is there and it has each requested component and
-     target.
+     target. localci installs the minimal profile. A toolchain file with the
+     `default` or `complete` profile adds `clippy` and `rustfmt`. A channel
+     such as `stable` is updated at each setup, as on GitHub; when rustup
+     cannot reach its source, the installed toolchain stays.
 
    localci unpacks into a new temporary folder and then renames it, so a
    stopped setup does not leave a half folder. An operating system lock on

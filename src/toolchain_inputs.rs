@@ -214,6 +214,7 @@ fn toolchain_file(workspace: &Path) -> Option<(String, String, Vec<String>, Vec<
             return first_line(&text).map(|c| (c, name.to_string(), vec![], vec![]));
         }
         let (mut channel, mut components, mut targets) = (None, Vec::new(), Vec::new());
+        let mut profile = None;
         let mut lines = text.lines();
         while let Some(line) = lines.next() {
             let Some((key, value)) = line.split_once('=') else {
@@ -233,7 +234,17 @@ fn toolchain_file(workspace: &Path) -> Option<(String, String, Vec<String>, Vec<
                 "channel" => channel = toml_strings(&value).into_iter().next(),
                 "components" => components = toml_strings(&value),
                 "targets" => targets = toml_strings(&value),
+                "profile" => profile = toml_strings(&value).into_iter().next(),
                 _ => {}
+            }
+        }
+        // The default and complete profiles bring clippy and rustfmt; localci
+        // installs the minimal profile, so it asks for them as components.
+        if matches!(profile.as_deref(), Some("default" | "complete")) {
+            for extra in ["clippy", "rustfmt"] {
+                if !components.iter().any(|c| c == extra) {
+                    components.push(extra.to_string());
+                }
             }
         }
         return channel.map(|c| (c, name.to_string(), components, targets));

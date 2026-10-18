@@ -248,15 +248,16 @@ pub fn rust(need: &Need, dir: &Path, workspace: &Path) -> Result<Installed, Stri
         let _ = fs::remove_dir_all(&init_dir);
         ran?;
     }
-    if let Some(a) = rust_activation(need, dir, workspace) {
-        // Complete with each component and target: no network needed.
+    let present = rust_activation(need, dir, workspace);
+    // An exact or dated toolchain that is complete needs no network. A channel such as
+    // `stable` is updated, as on GitHub, and the installed one stays when offline.
+    if let (Some(a), true) = (&present, need.exact) {
         return Ok(Installed {
-            version: a.version,
+            version: a.version.clone(),
             path: toolchain_dir(dir, request, &triple),
             fresh: false,
         });
     }
-    let installed = false;
     let mut cmd = Command::new(bin.join("rustup"));
     cmd.args(["toolchain", "install", request, "--profile", "minimal"]);
     for c in &need.components {
@@ -270,9 +271,18 @@ pub fn rust(need: &Need, dir: &Path, workspace: &Path) -> Result<Installed, Stri
         .status()
         .map_err(|e| format!("rustup: {e}"))?;
     if !status.success() {
-        return Err(format!("rustup could not install {request}"));
+        return match present {
+            Some(a) => Ok(Installed {
+                version: a.version,
+                path: toolchain_dir(dir, request, &triple),
+                fresh: false,
+            }),
+            None => Err(format!("rustup could not install {request}")),
+        };
     }
+    let before = present.map(|a| a.version);
     let version = rust_activation(need, dir, workspace).map_or(request.to_string(), |a| a.version);
+    let installed = before.as_deref() == Some(version.as_str());
     Ok(Installed {
         version,
         path: toolchain_dir(dir, request, &triple),
