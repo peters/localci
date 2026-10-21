@@ -106,30 +106,29 @@ If the repository's own instructions (AGENTS.md, CONTRIBUTING.md) set a
 different PR process, follow those.
 
 1. **localci green.** Run the subset that matches the diff (sections 2-5).
-2. **Self-review, then the local review loop.** Always read the full diff
-   yourself first. Then run Copilot CLI's built-in review with the prompt below.
-   It uses the `gh` login and takes one to three minutes. Ask for concrete
-   inputs: a general "review this" prompt misses most of what the review on
-   GitHub finds later.
+2. **Self-review, then one independent local review.** Always read the full
+   diff yourself first. Then give the branch to one new reviewer agent that
+   starts without your conversation: not a fork of you, and not a review in
+   your own context. A code review command that runs in its own agent also
+   counts. Ask for concrete inputs: a general "review this" prompt misses most
+   of what the review on GitHub finds later. Find the base commit with
+   `git merge-base HEAD origin/HEAD` (or `origin/main`) and give the reviewer
+   this prompt with that commit in place of `<base>`:
 
-   ```sh
-   base="$(git merge-base HEAD origin/HEAD 2>/dev/null || git merge-base HEAD origin/main)"
-   copilot -p "/review the changes on this branch compared to commit $base (run git diff $base HEAD). Read each changed file in full, not only the changed lines, and the code it depends on. Find bugs: for each, give file:line, a one-line title, a concrete input or sequence of events, and the wrong result. Also check the pull request rules in AGENTS.md and CONTRIBUTING.md as a checklist: required evidence such as GIFs, tests and test procedures, files that must change together, and size limits. Only report problems with a concrete failure; skip style. If there are no significant issues, say so." \
-     -s --reasoning-effort high --allow-tool='shell(git:*)' --deny-tool='write' --no-ask-user
+   ```text
+   Review the changes on this branch compared to commit <base> (run git diff <base> HEAD). Read each changed file in full, not only the changed lines, and the code it depends on. Find bugs: for each, give file:line, a one-line title, a concrete input or sequence of events, and the wrong result. Also check the pull request rules in AGENTS.md and CONTRIBUTING.md as a checklist: required evidence such as GIFs, tests and test procedures, files that must change together, and size limits. Only report problems with a concrete failure; skip style. If there are no significant issues, say so.
    ```
 
-   Fix the real findings, run localci for the affected jobs, commit, and review
-   again until a round finds nothing actionable. Do not start a separate review
-   agent: this loop and the review on GitHub are the independent reviews. If
-   `copilot` is missing, offer `npm install -g @github/copilot`; your own
-   review then is the local review.
+   Fix each real finding, or answer it with the evidence. Run localci for the
+   affected jobs and commit. If you changed more than the fixes, review once
+   more. This review and the review on GitHub are the independent reviews.
 3. **Open the PR** with a normal commit message. GitHub CI runs once. The
    review on GitHub is the final gate, not the place to iterate: request it
-   only for a head that the local loop found clean.
+   only for a head that the local review found clean.
 4. **Review rounds.** When the review on GitHub reports findings, fix all of
-   them, run the local review loop until it is clean again, run localci for
-   the affected jobs, then push once with `[skip ci]` at the end of the commit
-   message and request the next review. GitHub starts no workflow for a head
+   them, review the fixes yourself, run localci for the affected jobs, then
+   push once with `[skip ci]` at the end of the commit message and request the
+   next review. GitHub starts no workflow for a head
    commit that carries that marker.
 5. **Final head.** When the reviewers are satisfied, push the head without the
    marker (amend the message or add an empty commit) so full CI runs on the
