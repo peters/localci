@@ -100,52 +100,22 @@ that need another OS. Say clearly that this is a local run and not a GitHub chec
 
 ## Before and during a pull request
 
-Goal: open the PR only when localci is green and a local review is clean, and
-let GitHub CI run on the first and the last head instead of on every fix.
-If the repository's own instructions (AGENTS.md, CONTRIBUTING.md) set a
-different PR process, follow those.
-
-1. **localci green.** Run the subset that matches the diff (sections 2-5).
-2. **Self-review, then one independent local review.** Always read the full
-   diff yourself first. Then give the branch to one new reviewer agent that
-   starts without your conversation: not a fork of you, and not a review in
-   your own context. A code review command that runs in its own agent also
-   counts. Ask for concrete inputs: a general "review this" prompt misses most
-   of what the review on GitHub finds later. Find the base commit with
-   `git merge-base HEAD origin/HEAD` (or `origin/main`) and give the reviewer
-   this prompt with that commit in place of `<base>`:
-
-   ```text
-   Review the changes on this branch compared to commit <base> (run git diff <base> HEAD). Read each changed file in full, not only the changed lines, and the code it depends on. Find bugs: for each, give file:line, a one-line title, a concrete input or sequence of events, and the wrong result. Also check the pull request rules in AGENTS.md and CONTRIBUTING.md as a checklist: required evidence such as GIFs, tests and test procedures, files that must change together, and size limits. Only report problems with a concrete failure; skip style. If there are no significant issues, say so.
-   ```
-
-   Fix each real finding, or answer it with the evidence. Run localci for the
-   affected jobs and commit. If you changed more than the fixes, review once
-   more. This review and the review on GitHub are the independent reviews.
-3. **Open the PR** with a normal commit message. GitHub CI runs once. The
-   review on GitHub is the final gate, not the place to iterate: request it
-   only for a head that the local review found clean.
-4. **Review rounds.** When the review on GitHub reports findings, fix all of
-   them, review the fixes yourself, run localci for the affected jobs, then
-   push once with `[skip ci]` at the end of the commit message and request the
-   next review. GitHub starts no workflow for a head
-   commit that carries that marker.
-5. **Final head.** When the reviewers are satisfied, push the head without the
-   marker (amend the message or add an empty commit) so full CI runs on the
-   exact head. Required checks stay "Expected" until that run passes. If the
-   next GitHub round will probably be the last one, push the fix without the
-   marker at once, so CI and the review run on the same head.
-6. **Ready to merge** when CI passed on the exact head, no review thread is
-   open, and the review on GitHub says "Approved", or says "Needs a closer
-   look" with 0 open findings and no "Previously missed" findings while the
-   local review found nothing actionable for the same file changes. A new
-   commit message or an empty commit does not change the files, but the review
-   on GitHub must still run on that exact head. A vague summary without findings
-   is not a finding. The repository's merge rules still apply, for example a
-   person's explicit permission.
-7. **Never on the default branch.** GitHub reads the whole commit message. Make
-   sure no squash message or merge commit that lands on the default branch
-   contains `[skip ci]`, or CI on that branch is skipped too.
+1. Run the localci subset that matches the diff (sections 2-5).
+2. The implementing agent self-reviews the complete diff once, fixes its findings,
+   and runs the affected checks before the first push. Do not run a separate
+   review agent or a CLI review loop.
+3. Open the PR with a normal commit message. The upstream repository starts
+   PR review automatically. Never assign, request or re-request an automated
+   reviewer through labels, comments, commands, APIs, workflow dispatches or
+   PR state changes.
+4. Read PR feedback, fix valid findings and answer invalid findings with evidence.
+   Run localci for affected jobs and push the fixes without another full
+   self-review round or a request for another review.
+5. Before merge, require green CI on the exact head, the required upstream
+   review decision, and the repository's feedback and acceptance gates. Check
+   which commit the review covers. Report a missing or failed required review;
+   do not trigger one yourself. The repository's merge authorization still applies.
+6. Never put a CI-skip marker in a commit that lands on the default branch.
 
 ## When localci gets something wrong
 

@@ -1,5 +1,14 @@
 # localci agent rules
 
+## Self-review and PR review
+
+- The implementing agent reviews the complete diff once, fixes its findings, and runs the applicable checks before the first push.
+- After that, rely on the upstream repository's automatic PR review. Address its feedback and validate the affected changes without another full self-review round.
+- Never assign, request, or re-request Copilot, Claude, or another automated reviewer. Do not use reviewer assignments, labels, comments, CLI commands, APIs, workflow dispatches, or PR state changes to trigger a review. The upstream repository manages automatic review.
+- Do not start a separate local review agent or a CLI review loop. This rule also applies to external contributions and overrides review loops in skills or linked procedures.
+- Keep CI, applicable smoke checks, feedback handling, and merge authorization. Check which commit a review covers; do not claim that an earlier review covers later changes. If a required automatic review is missing or fails, report the blocker without requesting another review.
+- Keep `CLAUDE.md` as the single import `@AGENTS.md`. Put repository instructions in `AGENTS.md`.
+
 localci runs the GitHub Actions jobs that match the host system. It runs them
 in the current checkout. Read `docs/adr/README.md` before you change behavior.
 
@@ -18,24 +27,4 @@ in the current checkout. Read `docs/adr/README.md` before you change behavior.
 
 ## Pull requests
 
-Claude reviews each pull request, at most 2 rounds (the owner's decision,
-2026-10-21). Copilot does not review: do not request a Copilot review and do
-not wait for one. The `Claude Review` workflow
-(`.github/workflows/claude-review.yml`) does the review with the rules in
-`.github/review-instructions.md`.
-
-- Round 1 starts when a pull request from a branch of this repository opens,
-  reopens or leaves draft.
-- Round 2 starts when you add the `claude-review` label:
-  `gh pr edit <n> --add-label claude-review`. Push all fixes of round 1 first.
-  The workflow removes the label when it finishes; adding a label that is still
-  there starts nothing. The workflow refuses a third round.
-- A pull request from a fork or a bot gets a round only from the label, after
-  you have read its full diff.
-- A round is one summary comment from `github-actions[bot]` whose last line is
-  `<!-- claude-review head=<sha> findings=<n> -->`. A run that fails posts no
-  summary and uses no round: read its log, fix the cause and add the label
-  again.
-- Review the full diff yourself and run the checks before the pull request
-  opens and before round 2. The review on the pull request is the final gate,
-  not the place to iterate. Fix or answer each finding before the merge.
+The upstream repository starts PR review automatically. The agent does not select a reviewer or start another review. Read the review and its threads, fix valid findings, answer invalid findings with evidence, and run the affected checks. Keep the repository's required review decision, unresolved-feedback rules, CI, acceptance checks and merge authorization. Check the reviewed commit before using a review as evidence. A missing or failed required review is a blocker to report, not a reason to assign a reviewer or trigger another run.
