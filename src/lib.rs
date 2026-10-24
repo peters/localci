@@ -19,4 +19,5 @@ pub mod shell;
 pub mod skill;
 pub mod toolchain;
 pub mod toolchain_inputs;
+pub mod version_file;
 pub mod workflow;

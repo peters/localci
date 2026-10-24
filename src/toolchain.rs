@@ -1,8 +1,9 @@
 //! The toolchains that the setup actions of a leg declare (ADR-0012).
 //!
 //! localci reads the `with:` inputs of known setup actions and the version files
-//! that they point at. It does not guess: a range that only the action can resolve
-//! is reported as such, with the text of the request.
+//! that they point at, and the version file of a checkout that has no setup step for
+//! a tool. It does not guess: a range that only the action can resolve is reported as
+//! such, with the text of the request.
 
 use crate::expr::{self, Ctx, Status};
 use crate::workflow::{yaml_text, Leg};
@@ -157,12 +158,16 @@ pub fn needs_for(
         add_env(&leg.job.env, &mut contexts, &mut dynamic);
     }
     let mut out = Vec::new();
+    let mut with_step: Vec<Tool> = Vec::new();
     for (i, step) in leg.job.steps.iter().enumerate() {
         let Some(uses) = step.uses.as_deref() else {
             continue;
         };
         if !is_setup_action(uses) {
             continue;
+        }
+        if let Some(tool) = tool_of(uses) {
+            with_step.push(tool);
         }
         let mut step_contexts = contexts.clone();
         let mut step_dynamic = dynamic.clone();
@@ -221,6 +226,22 @@ pub fn needs_for(
         };
         out.extend(found);
     }
+    // A leg without a setup step for a tool still needs it when the checkout root has
+    // a version file that names the version. A setup step of the same tool wins.
+    // `installable` leaves out Python and Java, which stay in the plan only.
+    for tool in [Tool::Dotnet, Tool::Node, Tool::Rust, Tool::Go, Tool::Python]
+        .into_iter()
+        .filter(|tool| tool.installable() && !with_step.contains(tool))
+    {
+        out.extend(
+            crate::version_file::version_file(tool, workspace)
+                .into_iter()
+                .map(|need| Need {
+                    leg: leg.key.clone(),
+                    ..need
+                }),
+        );
+    }
     out
 }
 
@@ -253,4 +274,59 @@ pub fn is_exact(version: &str) -> bool {
         && parts
             .iter()
             .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workflow::Job;
+    use std::fs;
+
+    /// A setup step of one tool leaves out the version file of that tool, and the
+    /// other tools come from their files.
+    #[test]
+    fn a_setup_step_wins_over_a_version_file() {
+        let dir = std::env::temp_dir().join(format!("localci-needs-{}", crate::install::unique()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(".nvmrc"), "18.20.4\n").unwrap();
+        fs::write(dir.join("go.mod"), "module example\n\ngo 1.23.4\n").unwrap();
+        let job: Job = serde_yaml::from_str(
+            "runs-on: ubuntu-latest\nsteps:\n  - uses: actions/setup-node@v4\n    with:\n      node-version: 20.11.1\n",
+        )
+        .unwrap();
+        let leg = Leg {
+            job: &job,
+            key: "build".into(),
+            name: "build".into(),
+            matrix: Map::new(),
+            labels: vec![],
+            os: Some(crate::workflow::Os::Linux),
+        };
+        let needs = needs_for(&leg, &dir, &Map::new(), None);
+        let seen: Vec<(usize, Option<Tool>, String, String)> = needs
+            .iter()
+            .map(|n| (n.step, n.tool, n.request.clone(), n.source.clone()))
+            .collect();
+        // The step of a tool wins over its file. The other tools of the checkout come
+        // after the steps, with no step of their own.
+        assert_eq!(
+            seen,
+            [
+                (
+                    1,
+                    Some(Tool::Node),
+                    "20.11.1".to_string(),
+                    "with.node-version".to_string()
+                ),
+                (
+                    0,
+                    Some(Tool::Go),
+                    "1.23.4".to_string(),
+                    "go.mod".to_string()
+                ),
+            ]
+        );
+        assert!(needs.iter().all(|n| n.leg == "build"));
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

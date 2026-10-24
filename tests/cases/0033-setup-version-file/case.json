@@ -1,0 +1,38 @@
+{
+  "description": "setup --plan reads a version file of the checkout root for a tool that no setup step declares, offline: .nvmrc for Node.js and the go line of go.mod for Go.",
+  "args": [
+    "setup",
+    "--plan",
+    "--json"
+  ],
+  "expect": {
+    "needs": [
+      {
+        "leg": "build",
+        "step": 0,
+        "action": "",
+        "tool": "node",
+        "request": "20.11.1",
+        "source": ".nvmrc",
+        "exact": true,
+        "status": "installs",
+        "installed": null
+      },
+      {
+        "leg": "build",
+        "step": 0,
+        "action": "",
+        "tool": "go",
+        "request": "1.23.4",
+        "source": "go.mod",
+        "exact": true,
+        "status": "installs",
+        "installed": null
+      }
+    ]
+  },
+  "hosts": [
+    "linux",
+    "macos"
+  ]
+}

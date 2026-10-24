@@ -1,4 +1,8 @@
-//! The inputs and version files of each known setup action (ADR-0012).
+//! The inputs and version files of each known setup action, and the version file of
+//! a checkout that has no setup step (ADR-0012).
+//!
+//! The parsers of the files here also serve `version_file`, so one parser reads a file
+//! with or without a setup action.
 
 use crate::toolchain::{is_exact, Need, Tool};
 use serde_json::Value;
@@ -18,7 +22,7 @@ pub fn read(tool: Tool, uses: &str, input: Input, workspace: &Path, base: Need) 
     }
 }
 
-fn need(base: &Need, request: &str, source: &str) -> Need {
+pub(crate) fn need(base: &Need, request: &str, source: &str) -> Need {
     Need {
         request: request.trim().to_string(),
         source: source.to_string(),
@@ -27,7 +31,7 @@ fn need(base: &Need, request: &str, source: &str) -> Need {
     }
 }
 
-fn missing(base: Need, note: &str) -> Vec<Need> {
+pub(crate) fn missing(base: Need, note: &str) -> Vec<Need> {
     vec![Need {
         note: Some(note.into()),
         ..base
@@ -36,7 +40,7 @@ fn missing(base: Need, note: &str) -> Vec<Need> {
 
 /// A file of the checkout. A path outside it (absolute, or with `..`) is not read,
 /// so a plan never shows a file of the machine.
-fn read_file(workspace: &Path, name: &str) -> Result<String, String> {
+pub(crate) fn read_file(workspace: &Path, name: &str) -> Result<String, String> {
     let path = Path::new(name);
     let inside = path
         .components()
@@ -60,7 +64,7 @@ fn read_file(workspace: &Path, name: &str) -> Result<String, String> {
     std::fs::read_to_string(&full).map_err(|_| format!("{name} is missing"))
 }
 
-fn first_line(text: &str) -> Option<String> {
+pub(crate) fn first_line(text: &str) -> Option<String> {
     text.lines()
         .map(str::trim)
         .find(|l| !l.is_empty() && !l.starts_with('#'))
@@ -106,6 +110,25 @@ fn without_comments(text: &str) -> String {
     out
 }
 
+/// The SDK of a `global.json`, with its `rollForward` rule, or a note with the reason
+/// why the file gives no need.
+pub(crate) fn global_json(file: &str, text: &str, base: Need) -> Vec<Need> {
+    let text = text.trim_start_matches('\u{feff}');
+    match serde_json::from_str::<Value>(&without_comments(text)) {
+        Ok(json) => match json["sdk"]["version"].as_str() {
+            Some(version) => {
+                let roll = json["sdk"]["rollForward"].as_str().unwrap_or("latestPatch");
+                vec![Need {
+                    policy: Some(format!("rollForward: {roll}")),
+                    ..need(&base, version, file)
+                }]
+            }
+            None => missing(base, &format!("{file} has no sdk.version")),
+        },
+        Err(why) => missing(base, &format!("{file}: {why}")),
+    }
+}
+
 /// `actions/setup-dotnet`: each line of `dotnet-version`, and the SDK of
 /// `global-json-file`; without both, the `global.json` of the checkout root.
 fn dotnet(input: Input, workspace: &Path, base: Need) -> Vec<Need> {
@@ -129,21 +152,8 @@ fn dotnet(input: Input, workspace: &Path, base: Need) -> Vec<Need> {
             "global.json".into()
         }
     };
-    let parsed = read_file(workspace, &file).and_then(|text| {
-        let text = text.trim_start_matches('\u{feff}');
-        serde_json::from_str::<Value>(&without_comments(text)).map_err(|e| format!("{file}: {e}"))
-    });
-    match parsed {
-        Ok(json) => match json["sdk"]["version"].as_str() {
-            Some(version) => {
-                let roll = json["sdk"]["rollForward"].as_str().unwrap_or("latestPatch");
-                needs.push(Need {
-                    policy: Some(format!("rollForward: {roll}")),
-                    ..need(&base, version, &file)
-                });
-            }
-            None => needs.extend(missing(base, &format!("{file} has no sdk.version"))),
-        },
+    match read_file(workspace, &file) {
+        Ok(text) => needs.extend(global_json(&file, &text, base)),
         Err(why) => needs.extend(missing(base, &why)),
     }
     needs
@@ -205,7 +215,9 @@ fn toml_strings(value: &str) -> Vec<String> {
 
 /// The channel, components and targets of `rust-toolchain` or `rust-toolchain.toml`.
 /// rustup reads the legacy file first when both are there.
-fn toolchain_file(workspace: &Path) -> Option<(String, String, Vec<String>, Vec<String>)> {
+pub(crate) fn toolchain_file(
+    workspace: &Path,
+) -> Option<(String, String, Vec<String>, Vec<String>)> {
     for name in ["rust-toolchain", "rust-toolchain.toml"] {
         let Ok(text) = read_file(workspace, name) else {
             continue;
@@ -325,7 +337,7 @@ fn is_dated(request: &str) -> bool {
 }
 
 /// The `go` line of `go.mod` (or `toolchain go1.x.y`, which wins), or the first line.
-fn go_file(text: &str) -> Option<String> {
+pub(crate) fn go_file(text: &str) -> Option<String> {
     let mut go = None;
     for line in text.lines().map(str::trim) {
         if let Some(v) = line.strip_prefix("toolchain go") {
