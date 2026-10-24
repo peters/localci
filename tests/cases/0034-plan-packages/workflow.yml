@@ -1,0 +1,8 @@
+name: packages
+on: push
+jobs:
+  build:
+    runs-on: localci-host
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev cmake

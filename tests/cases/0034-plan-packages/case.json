@@ -1,0 +1,32 @@
+{
+  "description": "setup --plan --json gives one entry for each Debian package of a run: step, with tool apt, and no entry for the apt-get update of the same line. localci setup installs no package, so the status is not installed.",
+  "args": [
+    "setup",
+    "--plan",
+    "--json"
+  ],
+  "expect": {
+    "needs": [
+      {
+        "leg": "build",
+        "step": 2,
+        "tool": "apt",
+        "request": "libasound2-dev",
+        "source": "run step 2",
+        "status": "not installed"
+      },
+      {
+        "leg": "build",
+        "step": 2,
+        "tool": "apt",
+        "request": "cmake",
+        "source": "run step 2",
+        "status": "not installed"
+      }
+    ]
+  },
+  "hosts": [
+    "linux",
+    "macos"
+  ]
+}

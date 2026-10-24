@@ -150,6 +150,183 @@ pub fn static_job_if(leg: &Leg, base: &serde_json::Map<String, Value>) -> Option
     decided(&yaml_text(leg.job.condition.as_ref()?), leg, base)
 }
 
+/// One Debian package that a `run:` step installs with `apt` (ADR-0012).
+pub struct Package {
+    pub leg: String,
+    pub step: usize,
+    pub request: String,
+    /// `run step <n>`.
+    pub source: String,
+}
+
+/// A command or a word of an `apt` install that localci does not name, and the reason.
+pub struct NotRead {
+    pub leg: String,
+    pub step: usize,
+    /// The command or the word.
+    pub text: String,
+    pub reason: String,
+}
+
+/// The Debian packages of the picked `run:` steps, and what localci does not read.
+#[derive(Default)]
+pub struct Packages {
+    pub found: Vec<Package>,
+    pub unread: Vec<NotRead>,
+}
+
+/// The flags of an `apt` install that localci drops: they are not packages.
+const APT_FLAGS: &[&str] = &["-y", "-q", "-qq", "--yes", "--no-install-recommends"];
+
+/// The shell operators that end one command of a `run:` step.
+const COMMAND_END: &[&str] = &["&&", "||", ";", "|", "\n"];
+
+/// The packages and the text that localci does not read, of one `run:` text.
+#[derive(Default)]
+struct Parsed {
+    packages: Vec<String>,
+    /// The text and the reason.
+    unread: Vec<(String, String)>,
+}
+
+/// The text after `apt-get install` or `apt install`, with an optional `sudo` first.
+fn install_tail(command: &str) -> Option<&str> {
+    let mut rest = command.trim();
+    if let Some(after) = rest.strip_prefix("sudo ") {
+        rest = after.trim_start();
+    }
+    ["apt-get install", "apt install"].iter().find_map(|head| {
+        let after = rest.strip_prefix(head)?;
+        (after.is_empty() || after.starts_with([' ', '\t'])).then(|| after.trim_start())
+    })
+}
+
+/// `true` when a command runs `apt-get install` or `apt install`.
+fn installs(command: &str) -> bool {
+    ["apt-get install", "apt install"].iter().any(|head| {
+        command.match_indices(head).any(|(at, _)| {
+            let before = &command[..at];
+            let after = &command[at + head.len()..];
+            (before.is_empty() || before.ends_with([' ', '\t']))
+                && (after.is_empty() || after.starts_with([' ', '\t']))
+        })
+    })
+}
+
+/// The commands of a `run:` text. A `\` at the end of a line joins the next line.
+fn commands(run: &str) -> Vec<String> {
+    let joined = run.replace("\\\r\n", " ").replace("\\\n", " ");
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut rest = joined.as_str();
+    while let Some(c) = rest.chars().next() {
+        if let Some(end) = COMMAND_END.iter().find(|e| rest.starts_with(**e)) {
+            out.push(std::mem::take(&mut current));
+            rest = &rest[end.len()..];
+        } else {
+            current.push(c);
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    out.push(current);
+    out
+}
+
+/// The packages of one `run:` text, and the text that localci does not read.
+fn parse(run: &str) -> Parsed {
+    let mut parsed = Parsed::default();
+    for command in commands(run) {
+        let command = command.trim();
+        if !installs(command) {
+            continue;
+        }
+        // The shell completes this text during the run, so localci cannot know the packages.
+        if command.contains('`') || command.contains("$(") {
+            parsed.unread.push((
+                command.to_string(),
+                "the command has a command substitution".to_string(),
+            ));
+            continue;
+        }
+        if command.contains('$') {
+            parsed.unread.push((
+                command.to_string(),
+                "the command has a shell variable".to_string(),
+            ));
+            continue;
+        }
+        let Some(tail) = install_tail(command) else {
+            parsed.unread.push((
+                command.to_string(),
+                "localci reads only `apt-get install` or `apt install`, after an optional `sudo`"
+                    .to_string(),
+            ));
+            continue;
+        };
+        for word in tail.split_whitespace() {
+            if word.starts_with('-') {
+                if !APT_FLAGS.contains(&word) {
+                    parsed
+                        .unread
+                        .push((word.to_string(), "a flag that localci does not read".into()));
+                }
+            } else if word.contains('=') {
+                parsed
+                    .unread
+                    .push((word.to_string(), "names a version".into()));
+            } else if word.contains('/') || word.ends_with(".deb") {
+                parsed
+                    .unread
+                    .push((word.to_string(), "is a path or a file".into()));
+            } else {
+                parsed.packages.push(word.to_string());
+            }
+        }
+    }
+    parsed
+}
+
+/// The `apt` packages of the picked `run:` steps of `legs`. A step that `--skip` names,
+/// or whose `if:` is false before the run, is not in the plan, as in `setup::plan`.
+/// A package is not a toolchain: `localci setup` installs no package.
+pub fn apt_packages(
+    legs: &[&Leg],
+    base: &serde_json::Map<String, Value>,
+    sel: &Selection,
+) -> Packages {
+    let mut out = Packages::default();
+    for leg in legs {
+        for (i, step) in leg.job.steps.iter().enumerate() {
+            let index = i + 1;
+            let Some(run) = step.run.as_deref() else {
+                continue;
+            };
+            if sel.skips(leg, index, step) || static_if(leg, step, base) == Some(false) {
+                continue;
+            }
+            let parsed = parse(run);
+            let source = format!("run step {index}");
+            for request in parsed.packages {
+                out.found.push(Package {
+                    leg: leg.key.clone(),
+                    step: index,
+                    request,
+                    source: source.clone(),
+                });
+            }
+            for (text, reason) in parsed.unread {
+                out.unread.push(NotRead {
+                    leg: leg.key.clone(),
+                    step: index,
+                    text,
+                    reason,
+                });
+            }
+        }
+    }
+    out
+}
+
 pub fn first_command(step: &Step) -> String {
     step.run.as_deref().map_or_else(
         || step.uses.clone().unwrap_or_default(),
@@ -290,5 +467,75 @@ fn truncate(s: &str, max: usize) -> String {
         let mut t: String = s.chars().take(max - 1).collect();
         t.push('…');
         t
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn packages(run: &str) -> Vec<String> {
+        parse(run).packages
+    }
+
+    /// The text that localci does not read, in the order of the run.
+    fn unread(run: &str) -> Vec<String> {
+        parse(run)
+            .unread
+            .into_iter()
+            .map(|(text, _)| text)
+            .collect()
+    }
+
+    #[test]
+    fn flags_are_not_packages() {
+        assert_eq!(
+            packages("sudo apt-get install -y -q -qq --yes --no-install-recommends curl git"),
+            ["curl", "git"]
+        );
+        assert!(unread("sudo apt-get install -y curl").is_empty());
+        assert_eq!(packages("sudo apt-get install -s curl"), ["curl"]);
+        assert_eq!(unread("sudo apt-get install -s curl"), ["-s"]);
+    }
+
+    #[test]
+    fn a_continuation_joins_the_next_line() {
+        let run = "sudo apt-get update\nsudo apt-get install -y \\\n  --no-install-recommends \\\n  libasound2-dev cmake\n";
+        assert_eq!(packages(run), ["libasound2-dev", "cmake"]);
+    }
+
+    #[test]
+    fn two_packages_in_one_line() {
+        assert_eq!(
+            packages("sudo apt-get update && sudo apt-get install -y libasound2-dev cmake"),
+            ["libasound2-dev", "cmake"]
+        );
+    }
+
+    #[test]
+    fn a_variable_or_a_substitution_is_not_read() {
+        let line = "sudo apt-get install -y $DEPS";
+        assert_eq!(unread(line), [line]);
+        assert!(packages(line).is_empty());
+        assert_eq!(unread("sudo apt-get install -y $(cat deps)").len(), 1);
+        assert_eq!(unread("sudo apt-get install -y `cat deps`").len(), 1);
+    }
+
+    #[test]
+    fn a_pinned_version_or_a_path_is_not_a_package() {
+        let run = "sudo apt-get install -y foo=1.2 ./local.deb bar";
+        assert_eq!(packages(run), ["bar"]);
+        assert_eq!(unread(run), ["foo=1.2", "./local.deb"]);
+    }
+
+    #[test]
+    fn the_install_command_comes_first() {
+        assert_eq!(packages("sudo apt-get install -y a b"), ["a", "b"]);
+        assert_eq!(packages("apt install a"), ["a"]);
+        assert!(packages("sudo apt-get update").is_empty());
+        assert!(packages("apt-get installer foo").is_empty());
+        assert!(packages("echo apt-get install foo").is_empty());
+        let prefixed = "DEBIAN_FRONTEND=noninteractive apt-get install -y a";
+        assert_eq!(unread(prefixed), [prefixed]);
     }
 }
