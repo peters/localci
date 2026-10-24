@@ -1,0 +1,10 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: localci-host
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.4'

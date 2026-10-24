@@ -28,6 +28,7 @@ the test that keeps the behavior correct. Add a row for each new case folder.
 | `--parallel` | Runs independent legs at the same time, in the order of `needs`. A matrix job fails in `needs` when any leg failed. See ADR-0011. | cases 0015, 0019 |
 | `uses:` actions | Not run. The step shows `skipped`. See ADR-0002. | case 0001 |
 | Setup actions with `--toolchains` | `actions/setup-dotnet`, `actions/setup-node`, the Rust setup actions and `actions/setup-go` use the toolchain that `localci setup` installed, at the version that the workflow or its version file names. Python and Java are in the plan only. See ADR-0012. | cases 0028, 0029, 0030 |
+| `localci setup --json` | Each result that installed or found a toolchain gives `activation`: the folders for `PATH` and the variables of the tool. See ADR-0012. | case 0035 |
 | Reusable workflow calls | Not run. `localci check` shows a note. | none |
 | `container:` | Ignored. The steps run on the host. | none |
 | `concurrency`, `permissions` | Ignored. | none |

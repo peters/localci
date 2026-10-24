@@ -1,0 +1,31 @@
+{
+  "description": "localci setup --json gives the activation of each install: the folders for PATH and the variables of the tool, as absolute paths under the toolchains folder. The folder is a small fixture, because CI does not download the archive of Go.",
+  "args": [
+    "setup",
+    "--json",
+    "--toolchains",
+    "toolchains"
+  ],
+  "expect": {
+    "results": [
+      {
+        "tool": "go",
+        "request": "1.23.4",
+        "version": "1.23.4",
+        "result": "already there",
+        "activation": {
+          "paths": [
+            "~/toolchains/go/1.23.4/bin"
+          ],
+          "env": {
+            "GOROOT": "~/toolchains/go/1.23.4"
+          }
+        }
+      }
+    ]
+  },
+  "hosts": [
+    "linux",
+    "macos"
+  ]
+}

@@ -2,7 +2,8 @@
 
 Status: Accepted.
 Date: 2026-10-18.
-Changed: 2026-10-24. `localci setup` installs Go from its official source.
+Changed: 2026-10-24. `localci setup` installs Go from its official source, and
+its `--json` answer gives the activation of each toolchain.
 
 This record adds to ADR-0002. ADR-0002 stays correct when you do not use
 `--toolchains`.
@@ -122,6 +123,13 @@ tools. A second list can become different from CI.
    its `if:` and `--skip`. With `--only`, it stays active, because the later
    steps need its toolchain.
 10. A run only reads `DIR`. A user who cannot write to `DIR` can use it.
+11. The answer of `localci setup --json` gives the activation of each toolchain
+    that it installed or found:
+    `{"activation": {"paths": ["<absolute path>"], "env": {"<NAME>":
+    "<value>"}}}`. The paths go first on `PATH` and the variables are the ones
+    of item 9. A caller writes the same values with no rule for each tool. The
+    keys `version`, `path` and `result` stay as they are, so an older reader
+    still works. A need that localci did not install has no `activation`.
 
 ## Consequences
 
@@ -157,3 +165,6 @@ tools. A second list can become different from CI.
   `install_sources.rs` pick the .NET SDK and the Node.js version from metadata.
   Unit tests in `install_go.rs` pick a Go release from metadata, unpack an
   archive into `bin/go`, and activate a version of the folder.
+- Case 0035 shows the `activation` of a Go version of the folder in the answer
+  of `localci setup --json`. A unit test in `setup.rs` gives the `activation`
+  of an install, and no `activation` for a need that setup did not install.
