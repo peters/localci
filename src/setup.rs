@@ -2,7 +2,7 @@
 
 use crate::install::{self, Activation, Lock};
 use crate::plan::{Packages, Selection};
-use crate::toolchain::{self, Need};
+use crate::toolchain::{self, Need, Tool};
 use crate::workflow::{Leg, Os, Workflow};
 use serde_json::{json, Map, Value};
 use std::{
@@ -32,6 +32,10 @@ pub fn plan(
                         && crate::plan::static_if(leg, step, contexts) != Some(false)
                 })
         })
+        .map(|mut n| {
+            n.note = n.note.take().or_else(|| policy_reason(&n));
+            n
+        })
         .collect()
 }
 
@@ -42,9 +46,19 @@ fn same_install(a: &Need, b: &Need) -> bool {
         && a.targets == b.targets
 }
 
+/// Why a need with a known tool does not install, when the installer's policy says
+/// so: of Java, only the Temurin distribution installs (ADR-0012).
+fn policy_reason(need: &Need) -> Option<String> {
+    match need.tool {
+        Some(Tool::Java) => crate::install_java::distribution(need.policy.as_deref()),
+        _ => None,
+    }
+}
+
 fn status(need: &Need) -> &'static str {
     match need.tool {
         None => "not supported",
+        Some(_) if policy_reason(need).is_some() => "not supported",
         Some(_) if need.request.is_empty() => "nothing to install",
         Some(tool) if tool.installable() => "installs",
         Some(_) => "plan only",

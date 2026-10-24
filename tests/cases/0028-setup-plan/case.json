@@ -56,7 +56,7 @@
         "tool": "java",
         "request": "21",
         "policy": "distribution: temurin",
-        "status": "plan only"
+        "status": "installs"
       },
       {
         "leg": "build#1",

@@ -239,6 +239,7 @@ pub fn clean_leftovers(dir: &Path) {
     for folder in [
         dir.to_path_buf(),
         dir.join("go"),
+        dir.join("java"),
         dir.join("node"),
         dir.join("rust"),
     ] {
@@ -324,6 +325,11 @@ pub fn install(need: &Need, dir: &Path, workspace: &Path) -> Result<Installed, S
         Tool::Rust => crate::install_sources::rust(need, dir, workspace),
         Tool::Go => {
             let installed = crate::install_go::install(need, dir)?;
+            remember(dir, tool, &need.request, &installed.version)?;
+            Ok(installed)
+        }
+        Tool::Java => {
+            let installed = crate::install_java::install(need, dir)?;
             remember(dir, tool, &need.request, &installed.version)?;
             Ok(installed)
         }
@@ -474,6 +480,10 @@ pub fn locate(need: &Need, dir: &Path, workspace: &Path) -> Result<Activation, S
             crate::install_sources::rust_activation(need, dir, workspace).ok_or_else(not_there)?
         }
         Tool::Go => crate::install_go::activation(need, dir).ok_or_else(not_there)?,
+        Tool::Java => match crate::install_java::distribution(need.policy.as_deref()) {
+            Some(why) => return Err(why),
+            None => crate::install_java::activation(need, dir).ok_or_else(not_there)?,
+        },
         other => return Err(format!("{} is in the plan only", other.title())),
     };
     activation
