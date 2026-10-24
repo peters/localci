@@ -4,6 +4,7 @@ Status: Accepted.
 Date: 2026-10-18.
 Changed: 2026-10-24. `localci setup` installs Go from its official source, and
 its `--json` answer gives the activation of each toolchain.
+Changed: 2026-10-24. The plan shows the Debian packages of the `run:` steps.
 
 This record adds to ADR-0002. ADR-0002 stays correct when you do not use
 `--toolchains`.
@@ -131,6 +132,29 @@ tools. A second list can become different from CI.
     keys `version`, `path` and `result` stay as they are, so an older reader
     still works. A need that localci did not install has no `activation`.
 
+12. `localci setup --plan` reads the `run:` steps for Debian packages. A build
+    needs libraries that its CI installs, for example `libasound2-dev`. An agent
+    must not add them by hand, because the workflow stays the list of the build.
+    - localci reads each `apt-get install` and `apt install` command of a picked
+      step, with an optional `sudo`. The flags `-y`, `-q`, `-qq`, `--yes` and
+      `--no-install-recommends` are not packages. A `\` at the end of a line
+      joins the next line, as the shell does.
+    - Each package is one entry of the plan. In `--json` the entry is
+      `{"tool": "apt", "request": "<package>", "leg": ..., "step": ...,
+      "source": "run step <n>"}`, so an agent copies it and installs the
+      package. The text plan prints the packages under a line `packages:`.
+    - localci does not name the packages of a command that has a `$` or a
+      backtick: the shell completes that text during the run. It does not name a
+      word that has an `=` (`pkg=1.2`), because the word names a version, or a
+      `/` or a `.deb` file, because the word names a file. It does not name a
+      flag that it does not read. The text plan names each of these texts with
+      the reason.
+    - A package is not a toolchain. `localci setup` installs no package, and
+      `setup` and `activate_step` do not act on an `apt` entry. The `apt`
+      command of the step installs the package during the run.
+
+    The plan needs no network.
+
 ## Consequences
 
 - An agent on a new machine runs `localci setup` and then `localci run` with
@@ -149,6 +173,8 @@ tools. A second list can become different from CI.
 - `RUSTUP_TOOLCHAIN` is not set when the checkout root has a toolchain file. A
   toolchain file in a subfolder does not change that, so there the step's
   toolchain wins, unlike on GitHub.
+- A Debian package of a `run:` step is in the plan and not in the toolchains
+  folder. The step installs it with `apt` during the run, on the host.
 
 ## Checks
 
@@ -168,3 +194,6 @@ tools. A second list can become different from CI.
 - Case 0035 shows the `activation` of a Go version of the folder in the answer
   of `localci setup --json`. A unit test in `setup.rs` gives the `activation`
   of an install, and no `activation` for a need that setup did not install.
+- Case 0034 shows the packages of a `run:` step in the plan JSON. Unit tests in
+  `plan.rs` read the flags, a line continuation and two packages in one line,
+  and refuse a variable, a command substitution, a pinned version and a path.
