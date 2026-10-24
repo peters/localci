@@ -181,17 +181,18 @@ versions for you:
 
 ```sh
 localci setup --plan            # what the setup steps ask for, and where the version comes from
-localci setup                   # install it (.NET SDK, Node.js, Rust and Go)
+localci setup                   # install it (.NET SDK, Node.js, Rust, Go and Python)
 localci run --toolchains ~/.cache/localci/toolchains
 ```
 
 Downloads come from the official sources (the .NET release metadata,
-nodejs.org, static.rust-lang.org, go.dev) and localci checks each one against
-its published checksum before it uses it. Nothing needs `sudo`. Every version
-gets its own folder, so two repositories can use different versions side by
-side. With `--toolchains` (or `LOCALCI_TOOLCHAINS`), each setup step of a run
-puts the installed version first on `PATH`, and the folder can be read-only.
-Python and Java show up in the plan, but localci does not install them yet.
+nodejs.org, static.rust-lang.org, go.dev, the `actions/python-versions`
+releases) and localci checks each one against its published checksum before it
+uses it. Nothing needs `sudo`. Every version gets its own folder, so two
+repositories can use different versions side by side. With `--toolchains` (or
+`LOCALCI_TOOLCHAINS`), each setup step of a run puts the installed version first
+on `PATH`, and the folder can be read-only. Java shows up in the plan, but
+localci does not install it yet.
 
 ## How it compares
 

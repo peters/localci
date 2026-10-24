@@ -1,0 +1,29 @@
+{
+  "description": "setup --plan reads python-version of actions/setup-python, offline, and shows that localci setup installs it.",
+  "args": [
+    "setup",
+    "--plan",
+    "--json",
+    "--toolchains",
+    "toolchains"
+  ],
+  "expect": {
+    "needs": [
+      {
+        "leg": "build",
+        "step": 1,
+        "action": "actions/setup-python@v6",
+        "tool": "python",
+        "request": "3.12",
+        "source": "with.python-version",
+        "exact": false,
+        "status": "installs",
+        "installed": null
+      }
+    ]
+  },
+  "hosts": [
+    "linux",
+    "macos"
+  ]
+}

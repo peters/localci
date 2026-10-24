@@ -352,11 +352,11 @@ mod tests {
             note: None,
             env: Default::default(),
         };
-        // Go 1.23.4 is in the folder, so the install needs no network. Python is in
-        // the plan only, so setup does not install it.
+        // Go 1.23.4 is in the folder, so the install needs no network. The second need
+        // names no version, so setup installs nothing for it.
         let needs = [
             need(Tool::Go, "actions/setup-go@v5", "1.23.4", true),
-            need(Tool::Python, "actions/setup-python@v5", "3.12", false),
+            need(Tool::Python, "actions/setup-python@v5", "", false),
         ];
         let (report, failed) = install_all(&needs, &dir, &dir, true).unwrap();
         assert!(!failed);

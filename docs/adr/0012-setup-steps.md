@@ -2,8 +2,9 @@
 
 Status: Accepted.
 Date: 2026-10-18.
-Changed: 2026-10-24. `localci setup` installs Go and Java from their official
-sources, and its `--json` answer gives the activation of each toolchain.
+Changed: 2026-10-24. `localci setup` installs Go, Java and Python from their
+official sources, and its `--json` answer gives the activation of each
+toolchain.
 Changed: 2026-10-24. The plan shows the Debian packages of the `run:` steps.
 Changed: 2026-10-24. A version file of the checkout root gives a need without a
 setup step.
@@ -77,12 +78,21 @@ tools. A second list can become different from CI.
    | Node.js | `https://nodejs.org/dist` and its `index.json` | SHA-256 from `SHASUMS256.txt` |
    | Rust | `rustup-init` from `https://static.rust-lang.org/rustup/dist` | SHA-256 from the `.sha256` file; rustup then checks each toolchain itself |
    | Go | the Go release metadata (`https://go.dev/dl/?mode=json&include=all`) | SHA-256 from the metadata |
+   | Python | the manifest of `actions/python-versions` for the version, then the release of `python-build-standalone` | SHA-256 from the `hashes.sha256` of the release |
 
    The Go metadata gives the file name and the SHA-256 of each file, so localci
    downloads `https://go.dev/dl/<file>`. The file is
    `go<version>.linux-amd64.tar.gz` on x64, `go<version>.linux-arm64.tar.gz` on
    arm64, and `go<version>.darwin-<arch>.tar.gz` on macOS. localci refuses
    another architecture, with the reason.
+
+   The Python manifest gives the version and the file of the newest Ubuntu that
+   holds it, as `python-<version>-linux-<ubuntu>-<arch>.tar.gz`, and the release
+   gives the SHA-256 of each file in `hashes.sha256`. The newest Ubuntu is the
+   archive whose interpreter links the OpenSSL of a current host. A Python
+   request is an exact version (`3.12.7`), a minor line (`3.12`) or a line with
+   `x` (`3.12.x`, `3.x`); a range such as `>=3.10` stops the setup, with the
+   reason.
 
    localci checks the bytes of the download in memory and unpacks the same
    bytes, so nothing can change the file between the check and the use. A
@@ -229,6 +239,11 @@ tools. A second list can become different from CI.
   archive into `bin/go`, and activate a version of the folder. Unit tests in
   `install_java.rs` pick a Temurin release from metadata, refuse a request that
   is not a version, and refuse a distribution other than Temurin.
+- Case 0031 shows the plan of an `actions/setup-python` step: the need with the
+  source `with.python-version` and the state `installs`.
+- Unit tests in `install_python.rs` pick a Python release and the newest Ubuntu
+  of its archive from the manifest, read the SHA-256 of the release, and
+  activate a version of the folder.
 - Case 0035 shows the `activation` of a Go version of the folder in the answer
   of `localci setup --json`. A unit test in `setup.rs` gives the `activation`
   of an install, and no `activation` for a need that setup did not install.

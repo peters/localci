@@ -240,6 +240,7 @@ pub fn clean_leftovers(dir: &Path) {
         dir.to_path_buf(),
         dir.join("go"),
         dir.join("java"),
+        dir.join("python"),
         dir.join("node"),
         dir.join("rust"),
     ] {
@@ -333,10 +334,11 @@ pub fn install(need: &Need, dir: &Path, workspace: &Path) -> Result<Installed, S
             remember(dir, tool, &need.request, &installed.version)?;
             Ok(installed)
         }
-        other => Err(format!(
-            "{} is in the plan only; localci setup does not install it yet",
-            other.title()
-        )),
+        Tool::Python => {
+            let installed = crate::install_python::install(need, dir)?;
+            remember(dir, tool, &need.request, &installed.version)?;
+            Ok(installed)
+        }
     }
 }
 
@@ -484,7 +486,7 @@ pub fn locate(need: &Need, dir: &Path, workspace: &Path) -> Result<Activation, S
             Some(why) => return Err(why),
             None => crate::install_java::activation(need, dir).ok_or_else(not_there)?,
         },
-        other => return Err(format!("{} is in the plan only", other.title())),
+        Tool::Python => crate::install_python::activation(need, dir).ok_or_else(not_there)?,
     };
     activation
         .env
