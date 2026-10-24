@@ -1,0 +1,58 @@
+{
+  "description": "With --toolchains, a setup-go step puts the Go of the folder on PATH, sets GOROOT and adds the version to LOCALCI_TOOLCHAIN_VERSIONS. The version of a request that is not exact comes from requests.json, and a version that is not in the folder is named. The folder is a small fixture, because CI does not download the archive of Go.",
+  "args": [
+    "run",
+    "--toolchains",
+    "../0030-toolchains",
+    "--json",
+    "-q"
+  ],
+  "expect": {
+    "failed": 0,
+    "legs": [
+      {
+        "key": "build",
+        "result": "success",
+        "steps": [
+          {
+            "outcome": "success",
+            "reason": "~toolchain: Go 1.22.5 from /"
+          },
+          {
+            "outcome": "success"
+          }
+        ]
+      },
+      {
+        "key": "remembered",
+        "result": "success",
+        "steps": [
+          {
+            "outcome": "success",
+            "reason": "~toolchain: Go 1.22.5 from /"
+          },
+          {
+            "outcome": "success"
+          }
+        ]
+      },
+      {
+        "key": "missing",
+        "result": "success",
+        "steps": [
+          {
+            "outcome": "skipped",
+            "reason": "~0030-toolchains (run `localci setup`)"
+          },
+          {
+            "outcome": "success"
+          }
+        ]
+      }
+    ]
+  },
+  "hosts": [
+    "linux",
+    "macos"
+  ]
+}

@@ -13,7 +13,7 @@ const DOTNET_INDEX: &str =
 const NODE_DIST: &str = "https://nodejs.org/dist";
 const RUSTUP_DIST: &str = "https://static.rust-lang.org/rustup/dist";
 
-fn numbers(v: &str) -> Vec<u64> {
+pub(crate) fn numbers(v: &str) -> Vec<u64> {
     v.split(['-', '+'])
         .next()
         .unwrap_or_default()
