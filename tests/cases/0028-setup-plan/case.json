@@ -66,6 +66,14 @@
         "status": "not supported"
       },
       {
+        "leg": "build#1",
+        "step": 0,
+        "tool": "python",
+        "request": "3.12",
+        "source": ".python-version",
+        "status": "installs"
+      },
+      {
         "leg": "build#2",
         "step": 2,
         "tool": "dotnet"
@@ -96,6 +104,14 @@
         "leg": "build#2",
         "step": 7,
         "tool": null
+      },
+      {
+        "leg": "build#2",
+        "step": 0,
+        "tool": "python",
+        "request": "3.12",
+        "source": ".python-version",
+        "status": "installs"
       },
       {
         "leg": "files",
