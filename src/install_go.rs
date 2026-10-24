@@ -226,12 +226,12 @@ mod tests {
         };
         let a = activation(&need("1.23.4", true), &dir).unwrap();
         assert_eq!(a.version, "1.23.4");
-        assert_eq!(a.paths, vec![dir.join("go/1.23.4/bin")]);
+        assert_eq!(a.paths, vec![dir.join("go").join("1.23.4").join("bin")]);
         assert_eq!(
             a.env,
             vec![(
                 "GOROOT".to_string(),
-                dir.join("go/1.23.4").display().to_string()
+                dir.join("go").join("1.23.4").display().to_string()
             )]
         );
         assert!(activation(&need("1.23.3", true), &dir).is_none());

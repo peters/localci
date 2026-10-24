@@ -24,8 +24,8 @@ RUN curl -fsSL "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x8
     && rm /tmp/rustup-init
 
 # Latest published release, resolved at setup time; see Cargo.toml package.version.
-ARG LOCALCI_VERSION=0.1.0
-ARG LOCALCI_SHA256=215096651a2af9b1a8d64825d6453b7e090049078ac30525074e9e1f43fdc893
+ARG LOCALCI_VERSION=0.2.0
+ARG LOCALCI_SHA256=b8cd25adc22aaef8b502f4bbb2fa899c2dd51b35615e49cc80aec22f0fa98215
 RUN mkdir -p /tmp/localci-install \
     && cd /tmp/localci-install \
     && curl -fsSL "https://github.com/peters/localci/releases/download/v${LOCALCI_VERSION}/localci-x86_64-unknown-linux-musl.tar.gz" -o localci-x86_64-unknown-linux-musl.tar.gz \
