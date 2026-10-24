@@ -44,18 +44,43 @@ pub fn pick(
     os: &str,
     arch: &str,
 ) -> Result<(String, String, String), String> {
-    let want = bare(request);
+    // `1.22.x` is the line `1.22`, and `stable` and `oldstable` are the two newest lines, as the
+    // setup action reads them.
+    let want = bare(request).trim_end_matches(".x").to_string();
     let releases = index.as_array().cloned().unwrap_or_default();
     let version = |e: &Value| bare(e["version"].as_str().unwrap_or_default()).to_string();
-    let matches = |v: &str| v == want || v.starts_with(&format!("{want}."));
     let stable = |e: &Value| e["stable"].as_bool().unwrap_or(false);
-    let chosen = releases
-        .iter()
-        .filter(|e| stable(e) && matches(&version(e)))
-        .max_by_key(|e| numbers(&version(e)));
+    let line = |v: &str| v.split('.').take(2).collect::<Vec<_>>().join(".");
+    let newest = |keep: &dyn Fn(&str) -> bool| {
+        releases
+            .iter()
+            .filter(|e| stable(e) && keep(&version(e)))
+            .max_by_key(|e| numbers(&version(e)))
+    };
+    let chosen = if matches!(want.as_str(), "stable" | "oldstable") {
+        let mut lines: Vec<String> = releases
+            .iter()
+            .filter(|e| stable(e))
+            .map(|e| line(&version(e)))
+            .collect();
+        lines.sort_by_key(|l| numbers(l));
+        lines.dedup();
+        let pick = if want == "stable" {
+            lines.last()
+        } else {
+            lines.iter().rev().nth(1)
+        };
+        pick.and_then(|l| newest(&|v| &line(v) == l))
+    } else {
+        newest(&|v| v == want || v.starts_with(&format!("{want}.")))
+    };
     let release = match chosen {
         Some(release) => release,
-        None if releases.iter().any(|e| matches(&version(e))) => {
+        None if releases.iter().any(|e| {
+            let v = version(e);
+            v == want || v.starts_with(&format!("{want}."))
+        }) =>
+        {
             return Err(format!(
                 "no stable Go release matches `{request}`; only a prerelease does"
             ))
@@ -165,6 +190,10 @@ mod tests {
         assert_eq!(resolve("1.22").unwrap().0, "1.22.10");
         assert_eq!(resolve("go1.23.3").unwrap().2, "old");
         assert!(resolve("1.23.4").unwrap().1.ends_with("linux-amd64.tar.gz"));
+        // The setup action also takes a line with `.x`, and the two channel names.
+        assert_eq!(resolve("1.22.x").unwrap().0, "1.22.10");
+        assert_eq!(resolve("stable").unwrap().0, "1.23.4");
+        assert_eq!(resolve("oldstable").unwrap().0, "1.22.10");
         assert!(resolve("1.24rc1")
             .unwrap_err()
             .contains("no stable Go release matches"));
