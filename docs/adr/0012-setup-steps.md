@@ -2,6 +2,7 @@
 
 Status: Accepted.
 Date: 2026-10-18.
+Changed: 2026-10-24. `localci setup` installs Go from its official source.
 
 This record adds to ADR-0002. ADR-0002 stays correct when you do not use
 `--toolchains`.
@@ -49,8 +50,13 @@ tools. A second list can become different from CI.
 4. localci does not guess. A range such as `>=18` or `^20` stays a request.
    For `global.json`, the plan shows the `rollForward` value as the policy and
    uses the version in the file.
-5. `localci setup` installs the .NET SDK, Node.js and Rust. Go, Python and
-   Java are in the plan only, and the setup says that it did not install them.
+5. `localci setup` installs the .NET SDK, Node.js, Rust and Go. Python and Java
+   are in the plan only, and the setup says that it did not install them. A Go
+   request is an exact version (`1.23.4`), a minor line (`1.23`), or the `go`
+   line or the `toolchain` line of `go.mod`. The official metadata of Go gives
+   the releases, and localci picks the newest stable release that matches the
+   request. A request that names no stable release stops the setup, with the
+   reason.
 6. Each download comes from the official source, over HTTPS, and localci
    checks it before it uses it:
 
@@ -59,6 +65,13 @@ tools. A second list can become different from CI.
    | .NET SDK | the .NET release metadata (`releases-index.json`, then `releases.json` of the channel) | SHA-512 from `releases.json` |
    | Node.js | `https://nodejs.org/dist` and its `index.json` | SHA-256 from `SHASUMS256.txt` |
    | Rust | `rustup-init` from `https://static.rust-lang.org/rustup/dist` | SHA-256 from the `.sha256` file; rustup then checks each toolchain itself |
+   | Go | the Go release metadata (`https://go.dev/dl/?mode=json&include=all`) | SHA-256 from the metadata |
+
+   The Go metadata gives the file name and the SHA-256 of each file, so localci
+   downloads `https://go.dev/dl/<file>`. The file is
+   `go<version>.linux-amd64.tar.gz` on x64, `go<version>.linux-arm64.tar.gz` on
+   arm64, and `go<version>.darwin-<arch>.tar.gz` on macOS. localci refuses
+   another architecture, with the reason.
 
    localci checks the bytes of the download in memory and unpacks the same
    bytes, so nothing can change the file between the check and the use. A
@@ -67,6 +80,8 @@ tools. A second list can become different from CI.
    `$XDG_CACHE_HOME/localci/toolchains`, else `~/.cache/localci/toolchains`.
    localci makes it an absolute path.
    - Each Node.js version has its own folder, `node/<version>/`.
+   - Each Go version has its own folder, `go/<version>/`. It holds the `go`
+     folder of the archive, so `bin/go` is at its top.
    - The .NET SDKs share one root, `dotnet/`, as the official install script
      and `actions/setup-dotnet` make it: each SDK adds its versioned folders,
      and only a newer SDK replaces the top-level `dotnet` host. So a step that
@@ -93,7 +108,8 @@ tools. A second list can become different from CI.
 9. With `localci run --toolchains DIR` (or `LOCALCI_TOOLCHAINS`), a setup step
    does not show `skipped`. It puts the toolchain of `DIR` first on `PATH` and
    sets the variables of the tool and the action: `DOTNET_ROOT` for .NET,
-   `RUSTUP_HOME` and `RUSTUP_TOOLCHAIN` for Rust, and the variables of item 2.
+   `GOROOT` for Go, `RUSTUP_HOME` and `RUSTUP_TOOLCHAIN` for Rust, and the
+   variables of item 2.
    It also adds the tool and the installed version to
    `LOCALCI_TOOLCHAIN_VERSIONS`, for example `rust 1.83.0 dotnet 8.0.426`. This
    variable is part of the key of `--cache` (ADR-0010), so a new version of a
@@ -129,8 +145,15 @@ tools. A second list can become different from CI.
 ## Checks
 
 - Case 0028 shows the plan of each known action, the `env` inputs, the version
-  files and an input that a job sets during the run.
+  files and an input that a job sets during the run, and the `installs` state of
+  Go.
 - Case 0029 shows a run that uses a toolchain of the folder, a setup step
   without a version and a missing toolchain.
+- Case 0030 shows a run that uses the Go of the folder: the version of `go.mod`
+  and the version that `requests.json` remembers, on `PATH`, in `GOROOT` and in
+  `LOCALCI_TOOLCHAIN_VERSIONS`. A version that the folder does not have is
+  named.
 - Unit tests in `install.rs` refuse a wrong checksum. Unit tests in
   `install_sources.rs` pick the .NET SDK and the Node.js version from metadata.
+  Unit tests in `install_go.rs` pick a Go release from metadata, unpack an
+  archive into `bin/go`, and activate a version of the folder.

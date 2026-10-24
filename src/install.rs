@@ -198,7 +198,7 @@ fn remember(dir: &Path, tool: Tool, request: &str, version: &str) -> Result<(), 
 
 /// Unpacks gzip tar `bytes` into `final_dir` through a new temporary folder and a
 /// rename, so a stopped setup never leaves a half folder that a run would use.
-fn unpack(bytes: &[u8], final_dir: &Path, strip: bool) -> Result<(), String> {
+pub(crate) fn unpack(bytes: &[u8], final_dir: &Path, strip: bool) -> Result<(), String> {
     let parent = final_dir.parent().ok_or("no parent folder")?;
     let tmp = parent.join(format!(".tmp-{}", unique()));
     fs::create_dir(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
@@ -236,7 +236,12 @@ fn unpack(bytes: &[u8], final_dir: &Path, strip: bool) -> Result<(), String> {
 /// Removes the temporary folders of a setup that a kill stopped. The caller holds
 /// the lock, so no other setup uses them.
 pub fn clean_leftovers(dir: &Path) {
-    for folder in [dir.to_path_buf(), dir.join("node"), dir.join("rust")] {
+    for folder in [
+        dir.to_path_buf(),
+        dir.join("go"),
+        dir.join("node"),
+        dir.join("rust"),
+    ] {
         for entry in fs::read_dir(&folder).into_iter().flatten().flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             if [".tmp-", ".unpacked-", ".rustup-init-", ".requests-"]
@@ -317,6 +322,11 @@ pub fn install(need: &Need, dir: &Path, workspace: &Path) -> Result<Installed, S
             })
         }
         Tool::Rust => crate::install_sources::rust(need, dir, workspace),
+        Tool::Go => {
+            let installed = crate::install_go::install(need, dir)?;
+            remember(dir, tool, &need.request, &installed.version)?;
+            Ok(installed)
+        }
         other => Err(format!(
             "{} is in the plan only; localci setup does not install it yet",
             other.title()
@@ -326,7 +336,13 @@ pub fn install(need: &Need, dir: &Path, workspace: &Path) -> Result<Installed, S
 
 /// Downloads, checks and unpacks one archive, unless `target` is there. `true` when
 /// it installed now.
-fn archive(target: &Path, url: &str, sum: Sum, hash: &str, strip: bool) -> Result<bool, String> {
+pub(crate) fn archive(
+    target: &Path,
+    url: &str,
+    sum: Sum,
+    hash: &str,
+    strip: bool,
+) -> Result<bool, String> {
     if target.is_dir() {
         return Ok(false);
     }
@@ -457,6 +473,7 @@ pub fn locate(need: &Need, dir: &Path, workspace: &Path) -> Result<Activation, S
         Tool::Rust => {
             crate::install_sources::rust_activation(need, dir, workspace).ok_or_else(not_there)?
         }
+        Tool::Go => crate::install_go::activation(need, dir).ok_or_else(not_there)?,
         other => return Err(format!("{} is in the plan only", other.title())),
     };
     activation

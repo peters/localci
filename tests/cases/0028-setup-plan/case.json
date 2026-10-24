@@ -48,7 +48,7 @@
         "request": "1.22.5",
         "source": "go.mod",
         "exact": true,
-        "status": "plan only"
+        "status": "installs"
       },
       {
         "leg": "build#1",
