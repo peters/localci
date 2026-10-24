@@ -101,6 +101,22 @@ pub fn plan_json(needs: &[Need], dir: &Path, workspace: &Path) -> Value {
     json!({ "toolchains": dir, "needs": items })
 }
 
+/// The folders for `PATH` and the variables that make a run use the toolchain of
+/// `need`, as the answer of `setup --json` gives them. A caller writes no rule
+/// for each tool (ADR-0012). `null` when the toolchain is not in the folder.
+fn activation_json(need: &Need, dir: &Path, workspace: &Path) -> Value {
+    let Ok(a) = install::locate(need, dir, workspace) else {
+        return Value::Null;
+    };
+    let paths: Vec<String> = a.paths.iter().map(|p| p.display().to_string()).collect();
+    let env: Map<String, Value> = a
+        .env
+        .into_iter()
+        .map(|(k, v)| (k, Value::String(v)))
+        .collect();
+    json!({ "paths": paths, "env": env })
+}
+
 /// Installs every need that localci can install. Returns the report and whether
 /// an install failed.
 pub fn install_all(
@@ -133,8 +149,10 @@ pub fn install_all(
                             "already there"
                         };
                         eprintln!("  ✓ {label}: {} {verb} ({})", i.version, i.path.display());
-                        json!({ "tool": need.tool, "request": need.request, "version": i.version,
-                                "path": i.path, "result": verb })
+                        let mut result = json!({ "tool": need.tool, "request": need.request,
+                                "version": i.version, "path": i.path, "result": verb });
+                        result["activation"] = activation_json(need, dir, workspace);
+                        result
                     }
                     Err(why) => {
                         failed = true;
@@ -247,4 +265,53 @@ pub fn command(
     } else {
         ExitCode::SUCCESS
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::toolchain::Tool;
+
+    #[test]
+    fn the_answer_gives_the_activation_of_each_install() {
+        let dir = std::env::temp_dir().join(format!("localci-setup-act-{}", install::unique()));
+        let bin = dir.join("go").join("1.23.4").join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(bin.join("go"), "#!/bin/sh\n").unwrap();
+        let need = |tool: Tool, action: &str, request: &str, exact: bool| Need {
+            leg: "build".into(),
+            step: 1,
+            action: action.into(),
+            tool: Some(tool),
+            request: request.into(),
+            source: "with.go-version".into(),
+            exact,
+            policy: None,
+            components: vec![],
+            targets: vec![],
+            note: None,
+            env: Default::default(),
+        };
+        // Go 1.23.4 is in the folder, so the install needs no network. Python is in
+        // the plan only, so setup does not install it.
+        let needs = [
+            need(Tool::Go, "actions/setup-go@v5", "1.23.4", true),
+            need(Tool::Python, "actions/setup-python@v5", "3.12", false),
+        ];
+        let (report, failed) = install_all(&needs, &dir, &dir, true).unwrap();
+        assert!(!failed);
+        let results = report["results"].as_array().unwrap();
+        assert_eq!(results[0]["version"], "1.23.4");
+        assert_eq!(results[0]["result"], "already there");
+        assert_eq!(
+            results[0]["activation"],
+            json!({
+                "paths": [bin.display().to_string()],
+                "env": { "GOROOT": dir.join("go").join("1.23.4").display().to_string() }
+            })
+        );
+        assert_eq!(results[1]["result"], "not installed");
+        assert!(results[1].get("activation").is_none(), "{}", results[1]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
