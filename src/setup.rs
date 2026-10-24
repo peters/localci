@@ -1,7 +1,7 @@
 //! `localci setup`: the toolchain plan of the picked legs, and the install (ADR-0012).
 
 use crate::install::{self, Activation, Lock};
-use crate::plan::Selection;
+use crate::plan::{Packages, Selection};
 use crate::toolchain::{self, Need};
 use crate::workflow::{Leg, Os, Workflow};
 use serde_json::{json, Map, Value};
@@ -12,7 +12,9 @@ use std::{
 
 /// The needs of the picked legs. Equal requests from several legs are one install.
 /// A setup step that `--skip` names, or whose `if:` is false before the run, is not
-/// in the plan: `run` would not use it either.
+/// in the plan: `run` would not use it either. A Debian package of a `run:` step is
+/// not a toolchain (`crate::plan::apt_packages`), so neither `setup` nor
+/// `activate_step` installs or activates one.
 pub fn plan(
     legs: &[&Leg],
     workflow: &Workflow,
@@ -54,12 +56,21 @@ fn title(need: &Need) -> String {
         .map_or_else(|| need.action.clone(), |t| t.title().to_string())
 }
 
-pub fn print_plan(needs: &[Need], dir: &Path) {
+/// A package is not a toolchain: `localci setup` installs no package. The `apt`
+/// command of the step installs it during the run (ADR-0012).
+const PACKAGE_STATUS: &str = "not installed";
+
+pub fn print_plan(needs: &[Need], packages: &Packages, dir: &Path) {
     if needs.is_empty() {
         println!("No setup action in the picked legs declares a toolchain.");
-        return;
+    } else {
+        println!("Toolchains folder: {}\n", dir.display());
+        print_toolchains(needs);
     }
-    println!("Toolchains folder: {}\n", dir.display());
+    print_packages(packages);
+}
+
+fn print_toolchains(needs: &[Need]) {
     for n in needs {
         let request = if n.request.is_empty() {
             "-"
@@ -87,8 +98,28 @@ pub fn print_plan(needs: &[Need], dir: &Path) {
     }
 }
 
-pub fn plan_json(needs: &[Need], dir: &Path, workspace: &Path) -> Value {
-    let items: Vec<Value> = needs
+/// The Debian packages of the `run:` steps, and the text that localci does not read.
+fn print_packages(packages: &Packages) {
+    if packages.found.is_empty() && packages.unread.is_empty() {
+        return;
+    }
+    println!("\npackages:");
+    for p in &packages.found {
+        println!(
+            "  {:<22} step {:<2} {:<24} from {}",
+            p.leg, p.step, p.request, p.source
+        );
+    }
+    for u in &packages.unread {
+        println!(
+            "  {:<22} step {:<2} not read: {} ({})",
+            u.leg, u.step, u.text, u.reason
+        );
+    }
+}
+
+pub fn plan_json(needs: &[Need], packages: &Packages, dir: &Path, workspace: &Path) -> Value {
+    let mut items: Vec<Value> = needs
         .iter()
         .map(|n| {
             let mut v = serde_json::to_value(n).unwrap_or_default();
@@ -98,6 +129,17 @@ pub fn plan_json(needs: &[Need], dir: &Path, workspace: &Path) -> Value {
             v
         })
         .collect();
+    // One entry for each package, in the shape that an agent copies to install it.
+    items.extend(packages.found.iter().map(|p| {
+        json!({
+            "leg": p.leg,
+            "step": p.step,
+            "tool": "apt",
+            "request": p.request,
+            "source": p.source,
+            "status": PACKAGE_STATUS,
+        })
+    }));
     json!({ "toolchains": dir, "needs": items })
 }
 
@@ -242,14 +284,15 @@ pub fn command(
     let dir = absolute(&dir);
     let needs = plan(&picked, workflow, root, contexts, sel);
     if flags.plan_only {
+        let packages = crate::plan::apt_packages(&picked, contexts, sel);
         if flags.json {
-            let plan = plan_json(&needs, &dir, root);
+            let plan = plan_json(&needs, &packages, &dir, root);
             println!(
                 "{}",
                 serde_json::to_string_pretty(&plan).unwrap_or_default()
             );
         } else {
-            print_plan(&needs, &dir);
+            print_plan(&needs, &packages, &dir);
         }
         return Ok(ExitCode::SUCCESS);
     }
