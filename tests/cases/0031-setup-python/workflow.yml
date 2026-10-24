@@ -1,0 +1,10 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: localci-host
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python3 -m unittest
