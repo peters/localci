@@ -2,8 +2,8 @@
 
 Status: Accepted.
 Date: 2026-10-18.
-Changed: 2026-10-24. `localci setup` installs Go from its official source, and
-its `--json` answer gives the activation of each toolchain.
+Changed: 2026-10-24. `localci setup` installs Go and Java from their official
+sources, and its `--json` answer gives the activation of each toolchain.
 Changed: 2026-10-24. The plan shows the Debian packages of the `run:` steps.
 
 This record adds to ADR-0002. ADR-0002 stays correct when you do not use
@@ -52,13 +52,20 @@ tools. A second list can become different from CI.
 4. localci does not guess. A range such as `>=18` or `^20` stays a request.
    For `global.json`, the plan shows the `rollForward` value as the policy and
    uses the version in the file.
-5. `localci setup` installs the .NET SDK, Node.js, Rust and Go. Python and Java
-   are in the plan only, and the setup says that it did not install them. A Go
+5. `localci setup` installs the .NET SDK, Node.js, Rust, Go and Java. Python is
+   in the plan only, and the setup says that it did not install it. A Go
    request is an exact version (`1.23.4`), a minor line (`1.23`), or the `go`
    line or the `toolchain` line of `go.mod`. The official metadata of Go gives
    the releases, and localci picks the newest stable release that matches the
    request. A request that names no stable release stops the setup, with the
-   reason.
+   reason. A Java request is a feature release (`21`), which is its newest GA,
+   or one build (`21.0.5`). The release metadata of Eclipse Adoptium gives the
+   GA builds and the SHA-256 of each archive, and localci picks the newest GA
+   that matches the request. A request that is not a version, for example a
+   range, stops the setup, with the reason. Only the Temurin distribution
+   installs. When the `distribution` of the step names another distribution,
+   the plan shows `not supported` with the reason, and the setup does not
+   install it.
 6. Each download comes from the official source, over HTTPS, and localci
    checks it before it uses it:
 
@@ -187,10 +194,14 @@ tools. A second list can become different from CI.
   and the version that `requests.json` remembers, on `PATH`, in `GOROOT` and in
   `LOCALCI_TOOLCHAIN_VERSIONS`. A version that the folder does not have is
   named.
+- Case 0032 shows the plan of an `actions/setup-java` step: the request `21`,
+  the `distribution: temurin` policy and the `installs` state.
 - Unit tests in `install.rs` refuse a wrong checksum. Unit tests in
   `install_sources.rs` pick the .NET SDK and the Node.js version from metadata.
   Unit tests in `install_go.rs` pick a Go release from metadata, unpack an
-  archive into `bin/go`, and activate a version of the folder.
+  archive into `bin/go`, and activate a version of the folder. Unit tests in
+  `install_java.rs` pick a Temurin release from metadata, refuse a request that
+  is not a version, and refuse a distribution other than Temurin.
 - Case 0035 shows the `activation` of a Go version of the folder in the answer
   of `localci setup --json`. A unit test in `setup.rs` gives the `activation`
   of an install, and no `activation` for a need that setup did not install.

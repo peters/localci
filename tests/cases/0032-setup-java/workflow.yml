@@ -1,0 +1,11 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: localci-host
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: echo build

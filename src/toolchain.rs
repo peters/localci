@@ -45,9 +45,12 @@ impl Tool {
         }
     }
 
-    /// `localci setup` installs these. Python and Java are in the plan only.
+    /// `localci setup` installs these. Python is in the plan only.
     pub fn installable(self) -> bool {
-        matches!(self, Tool::Dotnet | Tool::Node | Tool::Rust | Tool::Go)
+        matches!(
+            self,
+            Tool::Dotnet | Tool::Node | Tool::Rust | Tool::Go | Tool::Java
+        )
     }
 }
 

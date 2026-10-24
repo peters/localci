@@ -6,6 +6,7 @@ pub mod corpus;
 pub mod expr;
 pub mod install;
 pub mod install_go;
+pub mod install_java;
 pub mod install_sources;
 pub mod plan;
 pub mod process;

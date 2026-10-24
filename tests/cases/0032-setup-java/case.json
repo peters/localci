@@ -1,0 +1,30 @@
+{
+  "description": "setup --plan reads the distribution and the version of actions/setup-java offline. A Temurin step installs the newest GA of its feature release, and its distribution is part of the policy.",
+  "args": [
+    "setup",
+    "--plan",
+    "--json",
+    "--toolchains",
+    "toolchains"
+  ],
+  "expect": {
+    "needs": [
+      {
+        "leg": "build",
+        "step": 1,
+        "action": "actions/setup-java@v4",
+        "tool": "java",
+        "request": "21",
+        "source": "with.java-version",
+        "exact": false,
+        "policy": "distribution: temurin",
+        "status": "installs",
+        "installed": null
+      }
+    ]
+  },
+  "hosts": [
+    "linux",
+    "macos"
+  ]
+}
