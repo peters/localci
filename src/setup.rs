@@ -27,9 +27,12 @@ pub fn plan(
             toolchain::needs_for(leg, workspace, contexts, Some(&workflow.env))
                 .into_iter()
                 .filter(move |n| {
-                    let step = &leg.job.steps[n.step - 1];
-                    !sel.skips(leg, n.step, step)
-                        && crate::plan::static_if(leg, step, contexts) != Some(false)
+                    // A need from a version file has no step, so no `--skip` or `if:`
+                    // leaves it out.
+                    n.step == 0
+                        || (!sel.skips(leg, n.step, &leg.job.steps[n.step - 1])
+                            && crate::plan::static_if(leg, &leg.job.steps[n.step - 1], contexts)
+                                != Some(false))
                 })
         })
         .map(|mut n| {

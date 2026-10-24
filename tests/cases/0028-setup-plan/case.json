@@ -1,5 +1,5 @@
 {
-  "description": "setup --plan reads the inputs of known setup actions, the env, and the version files they point at, offline. It leaves out a step whose if: is false, reads no file outside the checkout, and keeps an empty rustflags.",
+  "description": "setup --plan reads the inputs of known setup actions, the env, and the version files they point at, offline. A leg without a setup step for a tool reads the version file of the checkout root. It leaves out a step whose if: is false, reads no file outside the checkout, and keeps an empty rustflags.",
   "args": [
     "setup",
     "--plan",
@@ -146,6 +146,14 @@
         "status": "plan only"
       },
       {
+        "leg": "files",
+        "step": 0,
+        "tool": "go",
+        "request": "1.22.5",
+        "source": "go.mod",
+        "exact": true
+      },
+      {
         "leg": "env-and-steps",
         "step": 1,
         "tool": "node",
@@ -174,6 +182,29 @@
         "tool": "dotnet",
         "request": "",
         "note": "an earlier step or job sets the version during the run"
+      },
+      {
+        "leg": "env-and-steps",
+        "step": 0,
+        "tool": "rust",
+        "request": "1.81.0",
+        "source": "rust-toolchain.toml",
+        "exact": true,
+        "components": [
+          "rustfmt",
+          "clippy"
+        ],
+        "targets": [
+          "wasm32-unknown-unknown"
+        ]
+      },
+      {
+        "leg": "env-and-steps",
+        "step": 0,
+        "tool": "go",
+        "request": "1.22.5",
+        "source": "go.mod",
+        "exact": true
       },
       {
         "leg": "more",
@@ -245,6 +276,14 @@
         "step": 9,
         "tool": "node",
         "request": "21.7.3",
+        "exact": true
+      },
+      {
+        "leg": "more",
+        "step": 0,
+        "tool": "go",
+        "request": "1.22.5",
+        "source": "go.mod",
         "exact": true
       }
     ]

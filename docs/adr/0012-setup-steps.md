@@ -5,6 +5,8 @@ Date: 2026-10-18.
 Changed: 2026-10-24. `localci setup` installs Go and Java from their official
 sources, and its `--json` answer gives the activation of each toolchain.
 Changed: 2026-10-24. The plan shows the Debian packages of the `run:` steps.
+Changed: 2026-10-24. A version file of the checkout root gives a need without a
+setup step.
 
 This record adds to ADR-0002. ADR-0002 stays correct when you do not use
 `--toolchains`.
@@ -162,6 +164,24 @@ tools. A second list can become different from CI.
 
     The plan needs no network.
 
+13. A leg that has no setup step for a tool reads one file of the checkout root.
+   The first of these files wins, and each tool gives at most one need:
+
+   | Tool | File | Request |
+   |---|---|---|
+   | .NET SDK | `global.json` | `sdk.version`, and `sdk.rollForward` as the policy |
+   | Node.js | `.nvmrc`, else `.node-version` | the first line that is not empty and not a comment |
+   | Rust | `rust-toolchain`, else `rust-toolchain.toml` | the channel, with `components` and `targets`, by the parser of item 2 |
+   | Go | `go.mod` | the `toolchain` line wins over the `go` line |
+   | Python | `.python-version` | the first line |
+
+   A setup step of the same tool wins over the file. localci reads these files
+   only for a tool that it installs, so a `.python-version` gives no need. A
+   file that names no version, or that does not parse, gives no need and one
+   line of the plan that names the file and the reason. The need has no action
+   and no step, so the plan shows step 0 for it. Most repositories have no
+   setup step, and their version file says what they need.
+
 ## Consequences
 
 - An agent on a new machine runs `localci setup` and then `localci run` with
@@ -182,12 +202,19 @@ tools. A second list can become different from CI.
   toolchain wins, unlike on GitHub.
 - A Debian package of a `run:` step is in the plan and not in the toolchains
   folder. The step installs it with `apt` during the run, on the host.
+- A need from a version file has no setup step, so `localci setup` installs it
+  but `localci run` does not put it on `PATH`. The step uses the tool of the
+  host, as without `--toolchains`.
 
 ## Checks
 
 - Case 0028 shows the plan of each known action, the `env` inputs, the version
   files and an input that a job sets during the run, and the `installs` state of
   Go.
+- Case 0033 shows the plan of a checkout that has `.nvmrc` and `go.mod` and no
+  setup step: one need for Node.js and one for Go, without an action. Unit tests
+  in `version_file.rs` read the version file of each tool and name a file that
+  names no version.
 - Case 0029 shows a run that uses a toolchain of the folder, a setup step
   without a version and a missing toolchain.
 - Case 0030 shows a run that uses the Go of the folder: the version of `go.mod`
