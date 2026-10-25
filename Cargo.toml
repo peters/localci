@@ -1,6 +1,6 @@
 [package]
 name = "localci"
-version = "0.2.0"
+version = "0.3.1"
 edition = "2021"
 # File::try_lock (the toolchains lock, ADR-0012) needs 1.89.
 rust-version = "1.89"
