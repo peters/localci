@@ -9,6 +9,11 @@ name: Claude Review
 # cap is reached and runs no review. The job removes the label when it
 # finishes, so the next request can add it again.
 #
+# A pull request of the bot `upkeep-peters` counts as a pull request of this
+# repository, so round 1 starts for it too. That App holds the merge gate of
+# this repository, and it merges only after this review covers the exact head,
+# so the review has to be able to start on its own.
+#
 # A round is one summary comment with the head/findings marker. A run that
 # fails posts no summary and uses no round. One run at a time per pull request,
 # so each run counts the rounds after the run before it posted its summary.
@@ -36,7 +41,8 @@ jobs:
       (github.event.action != 'labeled' &&
        !github.event.pull_request.draft &&
        github.event.pull_request.head.repo.full_name == github.repository &&
-       github.event.pull_request.user.type != 'Bot')
+       (github.event.pull_request.user.type != 'Bot' ||
+        github.event.pull_request.user.login == 'upkeep-peters'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
@@ -148,6 +154,7 @@ jobs:
         uses: anthropics/claude-code-action@f27be6b65a4652f08a2ba3cff79114829b588967 # v1.0.252
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_bots: upkeep-peters
           # The Claude app token exchange rejects this event's OIDC token, so
           # Claude comments with the job's own token, as github-actions[bot].
           github_token: ${{ github.token }}
